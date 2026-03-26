@@ -11,23 +11,27 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def main():
+async def main():
     assistant = Assistant()
-    assistant.start()
-
-    print("Sistem pornit. Apasă ENTER pentru a începe înregistrarea.")
+    await assistant.start()
+    logger.info("Sistem pornit — ascult wake word...")
 
     try:
+        # Loop-ul asyncio rulează permanent.
+        # handle_conversation() este programat din thread-ul wake word
+        # prin asyncio.run_coroutine_threadsafe() — deci nu blocăm aici.
         while True:
-            input(">>> Apasă ENTER pentru a înregistra...\n")
-            asyncio.run(assistant.handle_conversation())
-            print("Gata! Poți înregistra din nou.\n")
+            await asyncio.sleep(1)
 
-    except KeyboardInterrupt:
-        print("Oprit.")
+    except asyncio.CancelledError:
+        pass
     finally:
         assistant.stop()
+        logger.info("Sistem oprit.")
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nOprit de utilizator.")

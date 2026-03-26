@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import websockets
 import config
 from network.server import handle_client
 
@@ -18,5 +19,4 @@ async def main():
 
 
 if __name__ == "__main__":
-    import websockets
     asyncio.run(main())
