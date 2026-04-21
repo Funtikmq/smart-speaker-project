@@ -14,6 +14,8 @@ STT_LANGUAGE = "ro"
 
 # ─── TTS ──────────────────────────────────────────────────────────────────────
 TTS_LANGUAGE = "ro"
+TTS_OUTPUT_FORMAT = "wav"      # "wav" reduce CPU pe Pi la redare
+TTS_OUTPUT_SAMPLE_RATE = 16000
 
 # ─── AI ───────────────────────────────────────────────────────────────────────
 ANTHROPIC_API_KEY = "g6IhOMSxrvuexAz7NOGSUBG8DejqrWcJ3BSb1tmcRTGUlDOtdRroLg=="

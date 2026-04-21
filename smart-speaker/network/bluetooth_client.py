@@ -51,14 +51,18 @@ class BluetoothServer:
         self._connected.clear()
         if self._client_sock:
             try:
+                self._client_sock.shutdown(socket.SHUT_RDWR)
                 self._client_sock.close()
             except:
                 pass
+            self._client_sock = None
         if self._server_sock:
             try:
+                self._server_sock.shutdown(socket.SHUT_RDWR)
                 self._server_sock.close()
             except:
                 pass
+            self._server_sock = None
         logger.info("Bluetooth server oprit.")
 
     # ─── Accept loop ──────────────────────────────────────────────────────────

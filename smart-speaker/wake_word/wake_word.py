@@ -5,7 +5,6 @@ Nu pornește propriul stream. Primește date prin feed() înregistrat
 ca consumer la SharedMicStream.
 """
 
-import struct
 import logging
 import numpy as np
 import pvporcupine
@@ -26,6 +25,10 @@ logger = logging.getLogger(__name__)
 def _resample(audio_f32: np.ndarray, orig_fs: int, target_fs: int) -> np.ndarray:
     if orig_fs == target_fs:
         return audio_f32
+    # Fast-path pentru rapoarte întregi (ex: 48k -> 16k).
+    if orig_fs % target_fs == 0:
+        step = orig_fs // target_fs
+        return audio_f32[::step].astype(np.float32, copy=False)
     duration = len(audio_f32) / orig_fs
     orig_idx = np.linspace(0, duration, len(audio_f32))
     new_idx = np.linspace(0, duration, int(duration * target_fs))
@@ -49,7 +52,7 @@ class WakeWordDetector:
     def __init__(self, on_detected: callable = None):
         self.on_detected = on_detected
         self.running = False
-        self._buffer: list[int] = []
+        self._buffer = bytearray()
 
         logger.info("Se încarcă modelul Porcupine...")
         self.porcupine = pvporcupine.create(
@@ -59,6 +62,7 @@ class WakeWordDetector:
             model_path=PORCUPINE_LANGUAGE_MODEL,
         )
         self._frame_length = self.porcupine.frame_length  # 512 samples @ 16kHz
+        self._frame_bytes = self._frame_length * 2
         logger.info(
             f"Porcupine gata — frame_length={self._frame_length}, "
             f"sample_rate={self.porcupine.sample_rate}"
@@ -97,12 +101,13 @@ class WakeWordDetector:
 
         # float32 → int16
         samples_i16 = np.clip(audio_16k * 32767, -32768, 32767).astype(np.int16)
-        self._buffer.extend(samples_i16.tolist())
+        self._buffer.extend(samples_i16.tobytes())
 
         # Procesează câte un frame Porcupine (512 samples)
-        while len(self._buffer) >= self._frame_length:
-            frame = self._buffer[:self._frame_length]
-            self._buffer = self._buffer[self._frame_length:]
+        while len(self._buffer) >= self._frame_bytes:
+            frame_bytes = bytes(self._buffer[:self._frame_bytes])
+            del self._buffer[:self._frame_bytes]
+            frame = np.frombuffer(frame_bytes, dtype=np.int16)
 
             result = self.porcupine.process(frame)
             if result >= 0:

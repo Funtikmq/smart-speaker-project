@@ -24,7 +24,8 @@ import config
 
 logger = logging.getLogger(__name__)
 
-RESPONSE_FILE = "/tmp/response.mp3"
+RESPONSE_FILE_MP3 = "/tmp/response.mp3"
+RESPONSE_FILE_WAV = "/tmp/response.wav"
 
 
 class Assistant:
@@ -195,12 +196,13 @@ class Assistant:
         self.recorder.start()
 
         chunks_sent = 0
+        send_is_async = asyncio.iscoroutinefunction(send_fn)
 
         # Citim chunks și le trimitem cât timp înregistrăm
         while not self._recording_done.is_set():
             chunk = self.recorder.get_chunk(timeout=0.1)
             if chunk:
-                if asyncio.iscoroutinefunction(send_fn):
+                if send_is_async:
                     await send_fn(chunk)
                 else:
                     send_fn(chunk)
@@ -216,7 +218,13 @@ class Assistant:
     # ─── Redare răspuns ───────────────────────────────────────────────────────
 
     def _play_response(self, audio_bytes: bytes):
-        with open(RESPONSE_FILE, "wb") as f:
+        # Detectează formatul audio după header.
+        if audio_bytes.startswith(b"RIFF"):
+            out_file = RESPONSE_FILE_WAV
+        else:
+            out_file = RESPONSE_FILE_MP3
+
+        with open(out_file, "wb") as f:
             f.write(audio_bytes)
-        self.player.play(RESPONSE_FILE)
+        self.player.play(out_file)
         self.indicator.idle()
