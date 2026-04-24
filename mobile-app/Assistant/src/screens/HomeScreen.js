@@ -1,5 +1,5 @@
 import React from "react";
-import { SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
+import { Pressable, SafeAreaView, ScrollView, StatusBar, StyleSheet, Text, View } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import QuickActionCard from "../components/QuickActionCard";
 
@@ -10,7 +10,7 @@ const quickActions = [
   { title: "Smart Home", subtitle: "Lights, scenes, devices", accent: "#F2A03D" }
 ];
 
-export default function HomeScreen() {
+export default function HomeScreen({ onOpenSettings }) {
   return (
     <SafeAreaView style={styles.page}>
       <StatusBar barStyle="dark-content" backgroundColor="#F5F8FC" />
@@ -27,6 +27,12 @@ export default function HomeScreen() {
             Your assistant is online and ready for voice commands.
           </Text>
         </LinearGradient>
+
+        <View style={styles.topActions}>
+          <Pressable style={styles.settingsButton} onPress={onOpenSettings}>
+            <Text style={styles.settingsButtonText}>Settings</Text>
+          </Pressable>
+        </View>
 
         <View style={styles.sectionHeader}>
           <Text style={styles.sectionTitle}>Quick Actions</Text>
@@ -99,6 +105,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "flex-end"
+  },
+  topActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end"
+  },
+  settingsButton: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#D7DEEB"
+  },
+  settingsButtonText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#1A1C20"
   },
   sectionTitle: {
     fontSize: 20,
