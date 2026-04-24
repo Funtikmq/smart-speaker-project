@@ -1,0 +1,10 @@
+{
+  "expo": {
+    "name": "Smart Speaker Assistant",
+    "slug": "smart-speaker-assistant",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "platforms": ["android", "ios", "web"]
+  }
+}
