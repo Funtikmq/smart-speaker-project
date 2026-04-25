@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Animated,
   Easing,
@@ -13,6 +13,8 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Feather } from "@expo/vector-icons";
+
+const SPEAKER_MODES = ["Standard", "Loud", "Quiet", "Night", "Music", "Private"];
 
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
@@ -40,6 +42,8 @@ export default function HomeScreen({ onOpenSettings }) {
 
   const coreSize = Math.round(166 * scale);
   const ringFieldSize = Math.round(298 * scale);
+  const [isModePickerOpen, setIsModePickerOpen] = useState(false);
+  const [selectedMode, setSelectedMode] = useState("Standard");
 
   const pulse = useRef(new Animated.Value(0)).current;
   const outerWave = useRef(new Animated.Value(0)).current;
@@ -311,18 +315,39 @@ export default function HomeScreen({ onOpenSettings }) {
 
           <Text style={styles.sectionLabel}>ASSISTANT</Text>
           <View style={[styles.card, { borderRadius: tokens.cardRadius }]}>
-            <Pressable style={styles.row} onPress={() => {}}>
+            <Pressable style={styles.row} onPress={() => setIsModePickerOpen((prev) => !prev)}>
               <View style={styles.rowLeft}>
                 <View style={[styles.iconTile, { width: tokens.iconTile, height: tokens.iconTile }]}>
                   <Feather name="sliders" size={18} color="#B690FF" />
                 </View>
                 <View style={styles.rowTextWrap}>
                   <Text style={styles.rowTitle}>Mod</Text>
-                  <Text style={styles.rowSubtitle}>Standard</Text>
+                  <Text style={styles.rowSubtitle}>{selectedMode}</Text>
                 </View>
               </View>
-              <Feather name="chevron-right" size={16} color="#697193" />
+              <Feather name={isModePickerOpen ? "chevron-up" : "chevron-down"} size={16} color="#697193" />
             </Pressable>
+
+            {isModePickerOpen ? (
+              <View style={styles.modeGridWrap}>
+                {SPEAKER_MODES.map((mode) => {
+                  const active = selectedMode === mode;
+                  return (
+                    <Pressable
+                      key={mode}
+                      style={[styles.modeChip, active && styles.modeChipActive]}
+                      onPress={() => {
+                        setSelectedMode(mode);
+                        setIsModePickerOpen(false);
+                      }}
+                    >
+                      <Text style={[styles.modeChipText, active && styles.modeChipTextActive]}>{mode}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ) : null}
+
             <View style={styles.separator} />
 
             <Pressable style={styles.row} onPress={() => {}}>
@@ -547,6 +572,42 @@ const styles = StyleSheet.create({
     marginLeft: 68,
     borderBottomWidth: 1,
     borderBottomColor: "#2A3049"
+  },
+  modeGridWrap: {
+    marginTop: -2,
+    marginBottom: 10,
+    marginHorizontal: 14,
+    padding: 8,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#2E3450",
+    backgroundColor: "rgba(17, 22, 37, 0.7)",
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+    gap: 8
+  },
+  modeChip: {
+    width: "48%",
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#343C5A",
+    backgroundColor: "#161D31",
+    paddingVertical: 10,
+    alignItems: "center",
+    justifyContent: "center"
+  },
+  modeChipActive: {
+    borderColor: "#A578FF",
+    backgroundColor: "#2B2148"
+  },
+  modeChipText: {
+    color: "#DCE4FF",
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  modeChipTextActive: {
+    color: "#CBAFFF"
   },
   infoTitle: {
     color: "#EDF0FF",
