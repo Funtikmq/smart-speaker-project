@@ -16,6 +16,13 @@ import { Feather } from "@expo/vector-icons";
 
 const SPEAKER_MODES = ["Standard", "Loud", "Quiet", "Night", "Music", "Private"];
 
+const HISTORY_ITEMS = [
+  { text: "Play lo-fi music", time: "Today, 09:14" },
+  { text: "Set volume to 60%", time: "Today, 08:57" },
+  { text: "Enable night mode", time: "Yesterday, 23:10" },
+  { text: "What is the weather?", time: "Yesterday, 19:42" }
+];
+
 function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
@@ -44,8 +51,10 @@ export default function HomeScreen({ onOpenSettings }) {
   const ringFieldSize = Math.round(298 * scale);
   const [isModePickerOpen, setIsModePickerOpen] = useState(false);
   const [selectedMode, setSelectedMode] = useState("Standard");
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
 
   const pulse = useRef(new Animated.Value(0)).current;
+  const historyReveal = useRef(new Animated.Value(0)).current;
   const outerWave = useRef(new Animated.Value(0)).current;
   const innerGlow = useRef(new Animated.Value(0)).current;
   const wave1 = useRef(new Animated.Value(0.5)).current;
@@ -139,6 +148,15 @@ export default function HomeScreen({ onOpenSettings }) {
       waves.forEach((animation) => animation.stop());
     };
   }, [pulse, outerWave, innerGlow, wave1, wave2, wave3, wave4, wave5]);
+
+  useEffect(() => {
+    Animated.timing(historyReveal, {
+      toValue: isHistoryOpen ? 1 : 0,
+      duration: 180,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [historyReveal, isHistoryOpen]);
 
   const pulseScale = pulse.interpolate({
     inputRange: [0, 1],
@@ -321,7 +339,7 @@ export default function HomeScreen({ onOpenSettings }) {
                   <Feather name="sliders" size={18} color="#B690FF" />
                 </View>
                 <View style={styles.rowTextWrap}>
-                  <Text style={styles.rowTitle}>Mod</Text>
+                  <Text style={styles.rowTitle}>Select Mod</Text>
                   <Text style={styles.rowSubtitle}>{selectedMode}</Text>
                 </View>
               </View>
@@ -350,7 +368,7 @@ export default function HomeScreen({ onOpenSettings }) {
 
             <View style={styles.separator} />
 
-            <Pressable style={styles.row} onPress={() => {}}>
+            <Pressable style={styles.row} onPress={() => setIsHistoryOpen((prev) => !prev)}>
               <View style={styles.rowLeft}>
                 <View style={[styles.iconTile, { width: tokens.iconTile, height: tokens.iconTile }]}>
                   <Feather name="clock" size={18} color="#B690FF" />
@@ -360,8 +378,60 @@ export default function HomeScreen({ onOpenSettings }) {
                   <Text style={styles.rowSubtitle}>12 commands today</Text>
                 </View>
               </View>
-              <Feather name="chevron-right" size={16} color="#697193" />
+              <Feather name={isHistoryOpen ? "chevron-up" : "chevron-down"} size={16} color="#697193" />
             </Pressable>
+
+            {isHistoryOpen ? (
+              <Animated.View
+                style={[
+                  styles.historyWrap,
+                  {
+                    opacity: historyReveal,
+                    transform: [
+                      {
+                        translateY: historyReveal.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [-4, 0]
+                        })
+                      },
+                      {
+                        scale: historyReveal.interpolate({
+                          inputRange: [0, 1],
+                          outputRange: [0.98, 1]
+                        })
+                      }
+                    ]
+                  }
+                ]}
+              >
+                <View style={styles.historyHeader}>
+                  <Text style={styles.historyHeaderTitle}>Recent commands</Text>
+                  <View style={styles.historyMetaPill}>
+                    <Text style={styles.historyHeaderMeta}>{HISTORY_ITEMS.length} items</Text>
+                  </View>
+                </View>
+
+                {HISTORY_ITEMS.map((item, index) => (
+                  <View key={`${item.text}-${index}`}>
+                    <View style={styles.historyItem}>
+                      <View style={styles.historyLeftRow}>
+                        <View style={styles.historyDotWrap}>
+                          <View style={styles.historyDot} />
+                        </View>
+                        <View style={styles.historyTextWrap}>
+                          <Text style={styles.historyCommand} numberOfLines={1}>
+                            {item.text}
+                          </Text>
+                          <Text style={styles.historyTime}>{item.time}</Text>
+                        </View>
+                      </View>
+                      <Feather name="chevron-right" size={14} color="#7280A6" />
+                    </View>
+                    {index < HISTORY_ITEMS.length - 1 ? <View style={styles.historyDivider} /> : null}
+                  </View>
+                ))}
+                </Animated.View>
+            ) : null}
           </View>
         </ScrollView>
 
@@ -608,6 +678,107 @@ const styles = StyleSheet.create({
   },
   modeChipTextActive: {
     color: "#CBAFFF"
+  },
+  historyWrap: {
+    marginHorizontal: 14,
+    marginTop: -2,
+    marginBottom: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 14,
+    borderRadius: 18,
+    borderWidth: 1,
+    borderColor: "#424D74",
+    backgroundColor: "rgba(17, 22, 38, 0.94)",
+    gap: 10,
+    shadowColor: "#000",
+    shadowOpacity: 0.22,
+    shadowRadius: 18,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 6
+  },
+  historyHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingBottom: 2,
+    paddingHorizontal: 2
+  },
+  historyHeaderTitle: {
+    color: "#F4F6FF",
+    fontSize: 12,
+    fontWeight: "800",
+    letterSpacing: 1
+  },
+  historyHeaderMeta: {
+    color: "#B7BFD8",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.8,
+    textTransform: "uppercase"
+  },
+  historyMetaPill: {
+    paddingHorizontal: 8,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(145, 160, 205, 0.12)",
+    borderWidth: 1,
+    borderColor: "rgba(145, 160, 205, 0.16)"
+  },
+  historyItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(59, 68, 102, 0.85)",
+    backgroundColor: "rgba(23, 28, 46, 0.86)"
+  },
+  historyDivider: {
+    height: 1,
+    marginLeft: 40,
+    marginTop: 1,
+    marginBottom: 1,
+    backgroundColor: "rgba(82, 92, 130, 0.26)"
+  },
+  historyLeftRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+    minWidth: 0
+  },
+  historyDotWrap: {
+    width: 20,
+    height: 20,
+    borderRadius: 99,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(165, 120, 255, 0.16)",
+    borderWidth: 1,
+    borderColor: "rgba(165, 120, 255, 0.28)"
+  },
+  historyDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 99,
+    backgroundColor: "#A578FF"
+  },
+  historyTextWrap: {
+    flex: 1,
+    minWidth: 0
+  },
+  historyCommand: {
+    color: "#F4F6FF",
+    fontSize: 14,
+    fontWeight: "700"
+  },
+  historyTime: {
+    marginTop: 2,
+    color: "#A1A9C7",
+    fontSize: 11
   },
   infoTitle: {
     color: "#EDF0FF",
