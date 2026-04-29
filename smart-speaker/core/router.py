@@ -1,3 +1,4 @@
+import socket
 import asyncio
 import logging
 import websockets
@@ -7,29 +8,22 @@ logger = logging.getLogger(__name__)
 
 
 class ConnectionState:
-    BLUETOOTH_CLOUD  = "bluetooth_cloud"
-    BLUETOOTH_SIMPLE = "bluetooth_simple"
-    CLOUD_DIRECT     = "cloud_direct"
-    OFFLINE          = "offline"
+    BLUETOOTH_CLOUD = "bluetooth_cloud"    
+    BLUETOOTH_SIMPLE = "bluetooth_simple"  
+    CLOUD_DIRECT = "cloud_direct"          
+    OFFLINE = "offline"                    
 
 
 class Router:
 
     def __init__(self):
-        self._state      = ConnectionState.OFFLINE
-        self._bt_server  = None   # setat de Assistant după creare
-
-    def set_bt_server(self, bt_server) -> None:
-        """Injectăm referința la BluetoothServer pentru check_internet."""
-        self._bt_server = bt_server
-
-    # ─── Resolve ──────────────────────────────────────────────────────────────
+        self._state = ConnectionState.OFFLINE
 
     async def resolve(self) -> str:
         """
-        Logica de rutare:
+        Determină cea mai bună conexiune disponibilă.
 
-        BT conectat (telefon activ)?
+        BT conectat?
             DA → Telefonul are net? → BLUETOOTH_CLOUD : BLUETOOTH_SIMPLE
             NU → Placa are net?    → CLOUD_DIRECT    : OFFLINE
         """
@@ -66,50 +60,56 @@ class Router:
     # ─── Verificări ───────────────────────────────────────────────────────────
 
     def _check_bluetooth(self) -> bool:
-        """
-        Verifică dacă telefonul e conectat prin conexiunea RFCOMM existentă.
-        Nu mai deschidem un socket nou — folosim starea BluetoothServer.
-        """
-        if self._bt_server is None:
-            logger.debug("BT check: bt_server nesetat")
+        """Verifică dacă telefonul e paired și accesibil prin RFCOMM."""
+        try:
+            sock = socket.socket(
+                socket.AF_BLUETOOTH,
+                socket.SOCK_STREAM,
+                socket.BTPROTO_RFCOMM
+            )
+            sock.settimeout(2)
+            result = sock.connect_ex((config.PHONE_BT_ADDRESS, config.BT_CHANNEL))
+            sock.close()
+            return result == 0
+        except Exception as e:
+            logger.debug(f"BT check failed: {e}")
             return False
-        connected = self._bt_server.is_connected
-        logger.debug(f"BT check: is_connected={connected}")
-        return connected
 
     async def _check_phone_internet(self) -> bool:
         """
-        Trimite check_internet prin conexiunea RFCOMM existentă.
-        Telefonul răspunde cu {'type': 'net_status', 'online': true/false}.
+        Întreabă telefonul prin RFCOMM dacă are conexiune internet.
+        Telefonul răspunde cu {'type': 'net_status', 'online': true/false}
         """
-        if self._bt_server is None or not self._bt_server.is_connected:
-            logger.debug("check_internet: telefon deconectat")
-            return False
-
         try:
-            # Trimitem pe conexiunea existentă cu protocolul corect
-            self._bt_server.send_command({"type": "check_internet"})
-
-            # Așteptăm răspunsul din command_queue (maxim 4 secunde)
-            response = await asyncio.wait_for(
-                self._bt_server.recv_command(),
-                timeout=4.0,
+            sock = socket.socket(
+                socket.AF_BLUETOOTH,
+                socket.SOCK_STREAM,
+                socket.BTPROTO_RFCOMM
             )
-            online = response.get("online", False)
-            logger.info(f"Phone internet: online={online}")
-            return online
+            sock.settimeout(3)
+            sock.connect((config.PHONE_BT_ADDRESS, config.BT_CHANNEL))
 
-        except asyncio.TimeoutError:
-            logger.warning("check_internet: timeout — presupun offline")
-            return False
+            import json
+            msg = json.dumps({"type": "check_internet"}).encode()
+            sock.send(len(msg).to_bytes(2, 'big') + msg)
+
+            header = sock.recv(2)
+            length = int.from_bytes(header, 'big')
+            data = json.loads(sock.recv(length).decode())
+            sock.close()
+
+            return data.get("online", False)
         except Exception as e:
-            logger.debug(f"check_internet failed: {e}")
+            logger.debug(f"Phone internet check failed: {e}")
             return False
 
     async def _check_cloud(self) -> bool:
-        """Verifică dacă serverul cloud e accesibil direct de pe Pi."""
+        """Verifică dacă serverul cloud e accesibil direct."""
         try:
-            async with websockets.connect(config.SERVER_URL, open_timeout=3):
+            async with websockets.connect(
+                config.SERVER_URL,
+                open_timeout=3
+            ):
                 return True
         except Exception as e:
             logger.debug(f"Cloud check failed: {e}")
