@@ -76,8 +76,8 @@ async def _process_text(websocket, text: str):
     """Primește text → AI → TTS → trimite răspuns înapoi."""
 
     # ─── AI ───────────────────────────────────────────────────────────────────
-    # response_text = ai.respond(text)          # decomentează când ai Claude configurat
-    response_text = f"Ai spus: {text}"          # placeholder simplu
+    # response_text = ai.respond(text)          # decomentează când va fi Claude configurat
+    response_text = f"You said: {text}"          # placeholder simplu
 
     logger.info(f"Răspuns AI: {response_text}")
 

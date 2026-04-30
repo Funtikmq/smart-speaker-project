@@ -10,10 +10,10 @@ WHISPER_MODEL = "small"
 SAMPLE_RATE_PI      = 16000
 WHISPER_SAMPLE_RATE = 16000
 
-STT_LANGUAGE = "ro"
+STT_LANGUAGE = "en"
 
 # ─── TTS ──────────────────────────────────────────────────────────────────────
-TTS_LANGUAGE = "ro"
+TTS_LANGUAGE = "en"
 TTS_OUTPUT_FORMAT = "wav"      # "wav" reduce CPU pe Pi la redare
 TTS_OUTPUT_SAMPLE_RATE = 16000
 

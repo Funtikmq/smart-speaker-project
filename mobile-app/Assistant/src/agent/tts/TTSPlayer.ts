@@ -53,23 +53,59 @@ export class TTSPlayer {
         console.warn('[TTS] Cloud eșuat, fallback la nativ:', err);
       }
     }
-
-    this._speakNative(text);
+    await this._speakNative(text);
   }
 
   // ─── Android TTS nativ ────────────────────────────────────────────────────
 
-  private _speakNative(text: string): void {
-    if (!this._ttsReady) {
-      console.warn('[TTS] Android TTS neiniț., nu pot reda');
-      return;
-    }
-    Tts.stop();
+  private _speakNative(text: string): Promise<void> {
+    return new Promise(resolve => {
+      if (!this._ttsReady) {
+        console.warn('[TTS] Android TTS neiniț., nu pot reda');
+        resolve();
+        return;
+      }
 
-    setTimeout(() => {
-      Tts.speak(text);
-      console.log(`[TTS] Nativ: "${text.substring(0, 80)}"`);
-    }, 600);
+      Tts.stop();
+
+      let finished = false;
+      const onFinish = () => {
+        if (finished) return;
+        finished = true;
+        try {
+          // remove listener if API supports it
+          if ((Tts as any).removeEventListener) {
+            (Tts as any).removeEventListener('tts-finish', onFinish as any);
+          }
+        } catch {}
+        resolve();
+      };
+
+      try {
+        if ((Tts as any).addEventListener) {
+          (Tts as any).addEventListener('tts-finish', onFinish as any);
+        }
+      } catch {}
+
+      // safety timeout in case event isn't fired
+      const timeout = setTimeout(() => {
+        onFinish();
+      }, 10000);
+
+      setTimeout(() => {
+        Tts.speak(text);
+        console.log(`[TTS] Nativ: "${text.substring(0, 80)}"`);
+      }, 600);
+
+      // ensure we clear timeout when resolved
+      const origResolve = resolve;
+      resolve = (v?: any) => {
+        clearTimeout(timeout);
+        try {
+          origResolve(v);
+        } catch {}
+      };
+    });
   }
 
   // ─── gTTS cloud ───────────────────────────────────────────────────────────

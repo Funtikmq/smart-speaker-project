@@ -1,24 +1,22 @@
 /**
  * AgentController.ts
  *
- * Creierul agentului — orchestrează întregul flow:
+ * Creierul agentului — descrie fluxul real implementat acum:
  *
- *   Pi detectează wake word
- *       │
- *       ├─► Pi întreabă: "ai internet?" → AgentController răspunde
- *       │
- *       ├─► Pi pornește recorder → trimite PCM chunks prin Bluetooth
- *       │       │
- *       │       └─► BluetoothAudioReceiver bufferizează în AudioBuffer
- *       │
- *       ├─► Pi trimite "recording_stopped" + use_cloud flag
- *       │
- *       └─► AgentController:
- *               ├── use_cloud=true  → STT cloud → Claude API → TTS cloud
- *               └── use_cloud=false → STT local → Intent local → TTS nativ
+ * Flow actual:
+ *   1. Pi detectează wake word și pornește recorderul.
+ *   2. Pi trimite PCM chunks prin RFCOMM la aplicația mobilă.
+ *   3. Telefonul bufferizează audio; la `recording_stopped` decide în funcție
+ *      de flag-ul `use_cloud` primit de la Pi:
+ *        - `use_cloud = true`:
+ *            • telefonul trimite PCM la serverul cloud (WebSocket)
+ *            • redăm `response` cu TTS nativ pe telefon (audio va fi transmis
+ *              către Pi prin A2DP/streaming), apoi trimitem `tts_done` la Pi
+ *        - `use_cloud = false`:
+ *            • telefonul folosește STT local (Vosk), procesează intentul local
+ *   4. Raw audio TTS primit direct de la server este ignorat în aplicație —
+ *      preferăm redare nativă pe telefon pentru consistență A2DP.
  *
- *
- * Expune starea prin React hook useAgent() pentru UI (screens/).
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -88,18 +86,24 @@ export class AgentController {
     // Vosk offline — inițializăm în background
     this.stt.initVosk().catch(e => console.warn('[Agent] Vosk init:', e));
 
-    // Când serverul trimite răspuns text → afișăm în UI
-    this.stt._onResponseText = (text: string) => {
+    // Când serverul trimite răspuns text → afișăm în UI și redăm prin TTS nativ
+    this.stt._onResponseText = async (text: string) => {
       this._emit({ response: text, phase: 'speaking' });
+      try {
+        await this.tts.speak(text, false);
+        // Semnalăm Pi-ului că TTS s-a terminat
+        await this.bt.sendCommand({ type: 'tts_done' });
+        console.log('[Agent] tts_done trimis la Pi (online)');
+      } catch (err) {
+        console.warn('[Agent] Eroare la redare TTS nativ:', err);
+      }
     };
 
-    // Când serverul trimite audio TTS → ajunge la Pi automat prin BT (call & media)
-    this.stt._onTTSReceived = async (audioBytes: Uint8Array) => {
+    // Când serverul trimite audio TTS raw — ignorăm (vom reda textul nativ)
+    this.stt._onTTSReceived = (audioBytes: Uint8Array) => {
       console.log(
-        `[Agent] TTS primit de la server (${audioBytes.length} bytes) — redat prin BT`,
+        `[Agent] Ignor audio TTS raw de la server (${audioBytes.length} bytes)`,
       );
-      // Nu mai trimitem manual — Bluetooth redirecționează audio automat
-      await this.bt.sendCommand({ type: 'tts_done' });
     };
 
     // Wiring Bluetooth → AgentController
@@ -239,24 +243,6 @@ export class AgentController {
 
 // ─── React Hook ───────────────────────────────────────────────────────────────
 
-/**
- * useAgent — hook React care expune starea agentului la screens/.
- *
- * Utilizare în AgentScreen.tsx:
- *
- *   import { useAgent } from '../agent/AgentController';
- *
- *   export function AgentScreen() {
- *     const { state, connect, disconnect } = useAgent('AA:BB:CC:DD:EE:FF');
- *     return (
- *       <View>
- *         <Text>{state.phase}</Text>
- *         <Text>{state.transcript}</Text>
- *         <Button title="Conectează" onPress={connect} />
- *       </View>
- *     );
- *   }
- */
 export function useAgent(piMacAddress: string) {
   const [state, setState] = useState<AgentState>(INITIAL_STATE);
   const controllerRef = useRef<AgentController | null>(null);

@@ -2,8 +2,11 @@ import subprocess
 import queue
 import threading
 import os
+import logging
 
 from .audio_config import PLAYER_QUEUE_SIZE, PLAYBACK_DEVICE, SAMPLE_RATE
+
+logger = logging.getLogger(__name__)
 
 
 class AudioPlayer:
@@ -100,23 +103,48 @@ class AudioPlayer:
         self.queue.put_nowait(chunk)
 
     def play(self, filename):
-        """Redă un fișier audio — WAV cu aplay, MP3 cu mpg123."""
+        """Redă un fișier audio — WAV cu aplay (cu parametrii corecți), MP3 cu mpg123."""
         if not os.path.exists(filename):
-            print(f"Fișierul nu există: {filename}")
+            logger.error(f"Fișierul nu există: {filename}")
             return
 
         if self.file_process:
+            logger.warning(f"Redare în curs, sar peste {filename}")
             return
 
         def run():
             if filename.endswith(".mp3"):
                 cmd = ["mpg123", filename]
             else:
-                cmd = ["aplay", f"-D{self.device}", filename]
+                # WAV: forțează parametrii corecți pentru a evita erori ALSA
+                # -t wav = format tip WAV
+                # -f S16_LE = 16-bit signed PCM, little-endian  
+                # -c 1 = mono
+                # -r 16000 = 16kHz sample rate
+                cmd = ["aplay", "-t", "wav", "-f", "S16_LE", "-c", "1", "-r", "16000", filename]
 
-            self.file_process = subprocess.Popen(cmd)
-            self.file_process.wait()
-            self.file_process = None
+            logger.info(f"Lansez comanda redare: {' '.join(cmd)}")
+            try:
+                self.file_process = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE
+                )
+                logger.info(f"Proces redare lansat (PID={self.file_process.pid})")
+                
+                # Așteptăm finalul procesului
+                returncode = self.file_process.wait()
+                logger.info(f"Proces redare terminat cu cod {returncode}")
+                
+                if returncode != 0:
+                    # Citim stderr pentru mesajul de eroare
+                    _, stderr = self.file_process.communicate()
+                    error_msg = stderr.decode('utf-8', errors='ignore') if stderr else ""
+                    logger.error(f"aplay a eșuat: {error_msg}")
+            except Exception as e:
+                logger.error(f"Eroare la redare {filename}: {e}", exc_info=True)
+            finally:
+                self.file_process = None
 
         threading.Thread(target=run, daemon=True).start()
 
