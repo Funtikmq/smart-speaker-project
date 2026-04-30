@@ -22,6 +22,11 @@ from network.bluetooth_client import BluetoothServer
 from indicators.indicators import Indicator
 import config
 
+try:
+    from cloud.tts.google_tts import synthesize as cloud_synthesize
+except Exception:
+    cloud_synthesize = None
+
 logger = logging.getLogger(__name__)
 
 RESPONSE_FILE_MP3 = "/tmp/response.mp3"
@@ -142,7 +147,7 @@ class Assistant:
                 logger.info(f"Răspuns: {data['text']}")
 
             audio_bytes = await client.recv_bytes(timeout=30)
-            self._play_response(audio_bytes)
+            await self._play_response(audio_bytes)
 
         finally:
             await client.disconnect()
@@ -161,9 +166,27 @@ class Assistant:
             })
             self.indicator.processing()
 
-            # Așteptăm audio TTS de la telefon
-            audio_bytes = await self.bt_server.recv_audio(timeout=30)
-            self._play_response(audio_bytes)
+            # Încercăm să primim audio TTS de la telefon, dar nu stăm blocat.
+            try:
+                audio_bytes = await asyncio.wait_for(self.bt_server.recv_audio(), timeout=1.0)
+                await self._play_response(audio_bytes)
+            except asyncio.TimeoutError:
+                logger.warning("Nu a venit TTS prin RFCOMM — nu mai așteptăm")
+                # Dacă telefonul trimite în schimb un command JSON cu textul răspunsului,
+                # putem genera TTS local ca fallback.
+                try:
+                    cmd = await asyncio.wait_for(self.bt_server.recv_command(), timeout=0.5)
+                    text = cmd.get("text") or cmd.get("response") or None
+                    if text and cloud_synthesize:
+                        try:
+                            audio_bytes = cloud_synthesize(text)
+                            await self._play_response(audio_bytes)
+                        except Exception as e:
+                            logger.warning(f"Local TTS eșuat: {e}")
+                    else:
+                        logger.info("Niciun text de răspuns primit de la telefon; sar peste redare.")
+                except asyncio.TimeoutError:
+                    logger.info("Nicio comandă de la telefon; sar peste redare.")
 
         except asyncio.TimeoutError:
             logger.warning("Timeout așteptând TTS de la telefon")
@@ -199,7 +222,10 @@ class Assistant:
 
     # ─── Redare răspuns ───────────────────────────────────────────────────────
 
-    def _play_response(self, audio_bytes: bytes):
+    async def _play_response(self, audio_bytes: bytes):
+        await self._play_response_async(audio_bytes)
+
+    async def _play_response_async(self, audio_bytes: bytes):
         if audio_bytes.startswith(b"RIFF"):
             out_file = RESPONSE_FILE_WAV
         else:
@@ -207,5 +233,57 @@ class Assistant:
 
         with open(out_file, "wb") as f:
             f.write(audio_bytes)
-        self.player.play(out_file)
-        self.indicator.idle()
+        logger.info(f"Răspuns salvat: {out_file} ({len(audio_bytes)} bytes)")
+
+        # Temporar oprim stream-ul de microfon pentru a evita input overflow
+        detector_prev = True
+        try:
+            try:
+                # dacă mic stream există, oprim
+                self.mic.stop()
+                logger.info("SharedMicStream oprit pentru redare")
+            except Exception as e:
+                logger.warning(f"Eroare stop microfon: {e}")
+
+            # Dezactivăm detectorul ca să nu declanșeze pe playback-ul propriu
+            detector_prev = getattr(self.detector, "running", True)
+            try:
+                self.detector.running = False
+                logger.info("WakeWordDetector dezactivat pentru redare")
+            except Exception as e:
+                logger.warning(f"Eroare dezactivare detector: {e}")
+
+            # Redăm fișierul și așteptăm să se termine
+            logger.info(f"Lansez redare: {out_file}")
+            self.player.play(out_file)
+            
+            # Așteptăm terminarea redării cu timeout
+            timeout_secs = 30
+            elapsed = 0
+            while elapsed < timeout_secs:
+                if getattr(self.player, "file_process", None) is None:
+                    # Dacă s-a terminat, ieșim
+                    break
+                await asyncio.sleep(0.2)
+                elapsed += 0.2
+            
+            if elapsed >= timeout_secs:
+                logger.warning(f"Redare timeout după {timeout_secs}s")
+            else:
+                logger.info("Redare terminată")
+
+        except Exception as e:
+            logger.error(f"Eroare în _play_response_async: {e}", exc_info=True)
+        finally:
+            # Repornim microfonul și detectorul
+            try:
+                self.mic.start()
+                logger.info("SharedMicStream repornit")
+            except Exception as e:
+                logger.warning(f"Eroare repornire microfon: {e}")
+            try:
+                self.detector.running = detector_prev
+                logger.info(f"WakeWordDetector reactivat (running={detector_prev})")
+            except Exception as e:
+                logger.warning(f"Eroare reactivare detector: {e}")
+            self.indicator.idle()
