@@ -21,8 +21,6 @@ interface IntentDefinition {
   extractParams: (text: string) => Record<string, string>;
 }
 
-// ─── Extragere offset zi ──────────────────────────────────────────────────────
-
 export function extractDayOffset(text: string): number {
   if (text.includes('day before yesterday') || text.includes('alaltaieri'))
     return -2;
@@ -39,10 +37,8 @@ export function extractDayOffset(text: string): number {
     text.includes('maine')
   )
     return 1;
-  return 0; // today / default
+  return 0;
 }
-
-// ─── Definiții intenții ───────────────────────────────────────────────────────
 
 const INTENTS: IntentDefinition[] = [
   {
@@ -98,13 +94,11 @@ const INTENTS: IntentDefinition[] = [
       { word: 'alarm for', weight: 3 },
     ],
     requiredParams: ['time'],
-    extractParams: extractAlarmParams,
+    extractParams: () => ({}),
   },
 ];
 
 const MIN_SCORE = 2;
-
-// ─── Classifier ───────────────────────────────────────────────────────────────
 
 export class IntentClassifier {
   classify(transcript: string): IntentResult {
@@ -140,38 +134,4 @@ export class IntentClassifier {
   getRequiredParams(intent: IntentName): string[] {
     return INTENTS.find(i => i.name === intent)?.requiredParams ?? [];
   }
-}
-
-// ─── Extragere parametri alarmă ───────────────────────────────────────────────
-
-function extractAlarmParams(text: string): Record<string, string> {
-  const params: Record<string, string> = {};
-
-  const timeMatch = text.match(
-    /(?:at|for)\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
-  );
-  if (timeMatch) {
-    const h = timeMatch[1];
-    const m = timeMatch[2] ? `:${timeMatch[2]}` : ':00';
-    const period = timeMatch[3] ? ` ${timeMatch[3].toUpperCase()}` : '';
-    params.time = `${h}${m}${period}`;
-  }
-
-  if (text.includes('tomorrow')) params.day = 'tomorrow';
-  else if (text.includes('today')) params.day = 'today';
-  else {
-    const days = [
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-      'sunday',
-    ];
-    const found = days.find(d => text.includes(d));
-    if (found) params.day = found;
-  }
-
-  return params;
 }

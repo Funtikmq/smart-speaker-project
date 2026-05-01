@@ -1,19 +1,13 @@
 /**
  * AlarmService.ts
- * Setează alarme reale pe Android folosind @notifee/react-native.
+ * Setează alarme reale pe Android folosind AlarmManager nativ.
  *
- * Instalare: npm install @notifee/react-native
- *
- * Permisiuni necesare în AndroidManifest.xml:
- *   <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
- *   <uses-permission android:name="android.permission.USE_EXACT_ALARM"/>
+ * Această abordare creează alarme persistente care vor suna chiar dacă
+ * aplicația e închisă. Folosim native AlarmManager via AlarmModule.
  */
 
-import notifee, {
-  TriggerType,
-  AndroidImportance,
-  TimestampTrigger,
-} from '@notifee/react-native';
+import { NativeAlarmManager } from '../native/NativeAlarmManager';
+import { SpeechDateTimeParser } from './SpeechDateTimeParser';
 
 export interface AlarmParams {
   time: string; // ex: "8:00 AM", "14:30"
@@ -21,11 +15,14 @@ export interface AlarmParams {
 }
 
 export class AlarmService {
+  private parser = new SpeechDateTimeParser();
+
   /**
    * Setează o alarmă și returnează textul de confirmare pentru TTS.
    */
   async setAlarm(params: AlarmParams): Promise<string> {
-    const date = this._resolveDate(params.day);
+    const now = new Date();
+    const date = this.parser.resolveDate(params.day);
     const { hours, minutes } = this._parseTime(params.time);
 
     date.setHours(hours, minutes, 0, 0);
@@ -35,76 +32,28 @@ export class AlarmService {
       date.setDate(date.getDate() + 1);
     }
 
-    // Creăm canalul de notificări (necesar pe Android 8+)
-    await notifee.createChannel({
-      id: 'alarm_channel',
-      name: 'Alarms',
-      importance: AndroidImportance.HIGH,
-      sound: 'default',
-      vibration: true,
-    });
+    const spokenTime = this.parser.formatTimeForSpeech(params.time);
+    const spokenDay = this.parser.formatDayForSpeech(now, date, params.day);
 
-    const trigger: TimestampTrigger = {
-      type: TriggerType.TIMESTAMP,
-      timestamp: date.getTime(),
-      alarmManager: {
-        allowWhileIdle: true,
-      },
-    };
+    try {
+      // Apelează Clock app nativă pentru a crea alarma
+      const dayLabel = params.day ? ` ${params.day}` : '';
+      const label = `Smart Speaker${dayLabel}`;
+      await NativeAlarmManager.setAlarmInClockApp(hours, minutes, label);
 
-    await notifee.createTriggerNotification(
-      {
-        title: 'Alarm',
-        body: `Alarm for ${params.time}`,
-        android: {
-          channelId: 'alarm_channel',
-          importance: AndroidImportance.HIGH,
-          sound: 'default',
-          vibrationPattern: [300, 500],
-          pressAction: { id: 'default' },
-        },
-      },
-      trigger,
-    );
-
-    const dayLabel = this._dayLabel(date, params.day);
-    console.log(`[Alarm] Setat pentru ${date.toISOString()}`);
-    return `Alarm set for ${params.time}${dayLabel}.`;
+      console.log(
+        `[Alarm] Setat în Clock app: ${hours}:${minutes
+          .toString()
+          .padStart(2, '0')} pe ${params.day || 'today'}`,
+      );
+      return `Alarm set for ${spokenTime}${spokenDay}.`;
+    } catch (error) {
+      console.error('[Alarm] Eroare setare alarmă:', error);
+      throw error;
+    }
   }
 
   // ─── Helpers ────────────────────────────────────────────────────────────────
-
-  private _resolveDate(day?: string): Date {
-    const now = new Date();
-    if (!day || day === 'today') return new Date(now);
-
-    if (day === 'tomorrow') {
-      const d = new Date(now);
-      d.setDate(d.getDate() + 1);
-      return d;
-    }
-
-    // Ziua săptămânii
-    const weekdays = [
-      'sunday',
-      'monday',
-      'tuesday',
-      'wednesday',
-      'thursday',
-      'friday',
-      'saturday',
-    ];
-    const targetDay = weekdays.indexOf(day.toLowerCase());
-    if (targetDay !== -1) {
-      const d = new Date(now);
-      const currentDay = d.getDay();
-      const daysUntil = (targetDay - currentDay + 7) % 7 || 7;
-      d.setDate(d.getDate() + daysUntil);
-      return d;
-    }
-
-    return new Date(now);
-  }
 
   private _parseTime(timeStr: string): { hours: number; minutes: number } {
     const match = timeStr.match(/(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i);
@@ -118,20 +67,5 @@ export class AlarmService {
     if (period === 'am' && hours === 12) hours = 0;
 
     return { hours, minutes };
-  }
-
-  private _dayLabel(date: Date, day?: string): string {
-    if (!day || day === 'today') return ' today';
-    if (day === 'tomorrow') return ' tomorrow';
-    const days = [
-      'Sunday',
-      'Monday',
-      'Tuesday',
-      'Wednesday',
-      'Thursday',
-      'Friday',
-      'Saturday',
-    ];
-    return ` on ${days[date.getDay()]}`;
   }
 }

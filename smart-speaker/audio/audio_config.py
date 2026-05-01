@@ -5,7 +5,7 @@ MIC_BLOCKSIZE   = 2048       # mai puține callback-uri => overhead CPU mai mic 
 MIC_BOOST       = 5          # amplificare software (același ca în testul tău)
 
 # ─── Audio procesat (spre server și WAV) ─────────────────────────────────────
-SAMPLE_RATE        = 16000   # după resample — ce primește serverul și Whisper
+SAMPLE_RATE        = 16000   # după resample — ce primește serverul și aplicatia
 AUDIO_CHANNELS     = 2       # stereo (duplicat L=R pentru compatibilitate)
 SAMPLE_WIDTH_BYTES = 2       # int16 = 2 bytes
 
