@@ -1,6 +1,6 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useRef } from 'react';
 import {
-  ActivityIndicator,
+  Animated,
   Pressable,
   ScrollView,
   StatusBar,
@@ -52,6 +52,31 @@ export default function AgentScreen() {
   const phaseMeta = PHASE_META[phase];
   const isConnected = btStatus !== 'disconnected' && btStatus !== 'error';
 
+  // Animation for phase dot pulse effect
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    const isActivePhase = ['connecting', 'listening', 'processing', 'speaking'].includes(phase);
+    if (isActivePhase) {
+      Animated.loop(
+        Animated.sequence([
+          Animated.timing(pulseAnim, {
+            toValue: 1.3,
+            duration: 600,
+            useNativeDriver: false,
+          }),
+          Animated.timing(pulseAnim, {
+            toValue: 1,
+            duration: 600,
+            useNativeDriver: false,
+          }),
+        ])
+      ).start();
+    } else {
+      pulseAnim.setValue(1);
+    }
+  }, [phase, pulseAnim]);
+
   const tokens = useMemo(
     () => ({
       pad: Math.round(isSmall ? 12 : 16 * scale),
@@ -94,7 +119,6 @@ export default function AgentScreen() {
               isConnected ? styles.serverIndicatorOnline : styles.serverIndicatorOffline,
             ]}
           >
-            {!isConnected ? <ActivityIndicator size={14} color="#FF6B6B" /> : null}
             <View style={[styles.indicatorDot, isConnected ? styles.indicatorDotOnline : styles.indicatorDotOffline]} />
           </View>
         </View>
@@ -124,12 +148,58 @@ export default function AgentScreen() {
         </View>
 
         <Text style={styles.sectionLabel}>STATE</Text>
-        <View style={[styles.card, { borderRadius: tokens.cardRadius }]}>
-          <View style={styles.phasePillWrap}>
-            <View style={[styles.phaseDot, { backgroundColor: phaseMeta.color }]} />
-            <Text style={[styles.phaseText, { color: phaseMeta.color }]}>{phaseMeta.label}</Text>
+        <View style={[styles.stateCard, { borderRadius: tokens.cardRadius }]}>
+          <View style={styles.stateVisualsWrap}>
+            <View style={styles.stateRingsContainer}>
+              {/* Outer ring */}
+              <Animated.View
+                style={[
+                  styles.stateRing,
+                  styles.stateRingOuter,
+                  { 
+                    borderColor: phaseMeta.color,
+                    opacity: 0.4,
+                    transform: [{ scale: pulseAnim }],
+                  },
+                ]}
+              />
+              {/* Middle ring */}
+              <Animated.View
+                style={[
+                  styles.stateRing,
+                  styles.stateRingMiddle,
+                  { 
+                    borderColor: phaseMeta.color,
+                    opacity: 0.6,
+                    transform: [{ scale: pulseAnim }],
+                  },
+                ]}
+              />
+              {/* Center circle */}
+              <Animated.View
+                style={[
+                  styles.stateCircle,
+                  { 
+                    backgroundColor: phaseMeta.color,
+                    shadowColor: phaseMeta.color,
+                    transform: [{ scale: pulseAnim }],
+                  },
+                ]}
+              >
+                <Text style={styles.stateEmoji}>⚡</Text>
+              </Animated.View>
+            </View>
+
+            <View style={styles.stateInfoWrap}>
+              <Text style={styles.stateStatusLabel}>Status</Text>
+              <Text style={[styles.stateStatusValue, { color: phaseMeta.color }]}>
+                {phaseMeta.label}
+              </Text>
+            </View>
           </View>
 
+          <View style={styles.separator} />
+          
           <View style={styles.statsGrid}>
             <View style={styles.statChip}>
               <Text style={styles.statLabel}>Chunks</Text>
@@ -316,22 +386,129 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     alignSelf: 'flex-start',
-    gap: 8,
-    paddingHorizontal: 10,
-    paddingVertical: 7,
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
     borderRadius: 999,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: WARM_BORDER,
-    backgroundColor: WARM_BG_3,
+    backgroundColor: WARM_BG_2,
   },
   phaseDot: {
-    width: 8,
-    height: 8,
+    width: 12,
+    height: 12,
     borderRadius: 99,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.4,
+    shadowRadius: 8,
+    elevation: 6,
   },
   phaseText: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: '700',
+    letterSpacing: 0.3,
+  },
+  stateCard: {
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: WARM_BORDER,
+    backgroundColor: WARM_BG_2,
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+  },
+  stateVisualsWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 20,
+  },
+  stateRingsContainer: {
+    width: 100,
+    height: 100,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stateRing: {
+    position: 'absolute',
+    borderWidth: 2,
+  },
+  stateRingOuter: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+  },
+  stateRingMiddle: {
+    width: 70,
+    height: 70,
+    borderRadius: 35,
+  },
+  stateCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: 'center',
+    justifyContent: 'center',
+    elevation: 10,
+  },
+  stateEmoji: {
+    fontSize: 20,
+    fontWeight: '700',
+  },
+  stateInfoWrap: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  stateStatusLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#B88D69',
+    textTransform: 'uppercase',
+  },
+  stateStatusValue: {
+    fontSize: 18,
+    fontWeight: '700',
+    marginTop: 6,
+    letterSpacing: 0.5,
+  },
+  stateContentWrap: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+  },
+  stateIndicatorWrap: {
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateIndicatorOuter: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    borderWidth: 2.5,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  stateIndicatorInner: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    elevation: 8,
+  },
+  stateTextWrap: {
+    flex: 1,
+  },
+  stateLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+    letterSpacing: 1,
+    color: '#B88D69',
+    textTransform: 'uppercase',
+  },
+  stateValue: {
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 4,
+    letterSpacing: 0.3,
   },
   statsGrid: {
     marginTop: 12,

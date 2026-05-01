@@ -9,7 +9,6 @@ import {
   Text,
   View,
   useWindowDimensions,
-  ActivityIndicator,
 } from 'react-native';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
@@ -148,13 +147,6 @@ export default function SettingsScreen() {
 
   const serverSettings: SettingItem[] = [
     {
-      id: 'server_status',
-      title: 'Backend Server',
-      subtitle: isConnected ? `🟢 Connected (${status?.host}:${status?.port})` : '🔴 Offline',
-      icon: 'agent',
-      type: 'info',
-    },
-    {
       id: 'response_time',
       title: 'Response Time',
       subtitle: responseTime ? `${responseTime}ms` : 'Not measured',
@@ -235,7 +227,6 @@ export default function SettingsScreen() {
           </Pressable>
           <Text style={[styles.pageTitle, { fontSize: tokens.pageTitle }]}>Settings</Text>
           <View style={[styles.serverIndicator, isConnected ? styles.serverIndicatorOnline : styles.serverIndicatorOffline]}>
-            {!isConnected && <ActivityIndicator size={14} color="#FF6B6B" />}
             <View style={[styles.indicatorDot, isConnected ? styles.indicatorDotOnline : styles.indicatorDotOffline]} />
           </View>
         </View>
@@ -248,39 +239,6 @@ export default function SettingsScreen() {
         <Text style={styles.sectionLabel}>SERVER</Text>
         <View style={styles.settingsGroup}>
           {serverSettings.map((item) => renderSettingItem(item))}
-        </View>
-
-        <Text style={styles.sectionLabel}>MAINTENANCE</Text>
-        <View style={styles.settingsGroup}>
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.actionButtonWarning,
-              pressed && styles.actionButtonPressed,
-            ]}
-            onPress={handleClearCache}
-          >
-            <Text style={styles.actionButtonIcon}>🧹</Text>
-            <View style={styles.actionButtonText}>
-              <Text style={styles.actionButtonTitle}>Clear Cache</Text>
-              <Text style={styles.actionButtonSubtitle}>Free up storage space</Text>
-            </View>
-          </Pressable>
-
-          <Pressable
-            style={({ pressed }) => [
-              styles.actionButton,
-              styles.actionButtonInfo,
-              pressed && styles.actionButtonPressed,
-            ]}
-            onPress={handleRestartServer}
-          >
-            <Text style={styles.actionButtonIcon}>🔄</Text>
-            <View style={styles.actionButtonText}>
-              <Text style={styles.actionButtonTitle}>Restart Server</Text>
-              <Text style={styles.actionButtonSubtitle}>Reconnect to backend</Text>
-            </View>
-          </Pressable>
         </View>
       </ScrollView>
 

@@ -274,35 +274,6 @@ export default function HomeScreen({ onOpenSettings }: Props) {
         scrollEnabled={true}
         showsVerticalScrollIndicator={false}
       >
-        <View style={styles.headerRow}>
-          <View style={styles.circleIcon}>
-            <AppIcon name="wifi" size={16} color="#E8C8A2" />
-          </View>
-          <View style={styles.headerRight}>
-            <View
-              style={[
-                styles.statusPill,
-                isConnected
-                  ? styles.statusPillConnected
-                  : styles.statusPillDisconnected,
-              ]}
-            >
-              <View
-                style={[
-                  styles.statusDot,
-                  isConnected ? styles.statusDotConnected : styles.statusDotError,
-                ]}
-              />
-              <Text style={styles.statusText}>
-                {isConnected ? 'Connected' : 'Offline'}
-              </Text>
-            </View>
-            <Pressable style={styles.circleIcon} onPress={handleOpenSettings}>
-              <AppIcon name="settings" size={14} color="#9CA7D2" />
-            </Pressable>
-          </View>
-        </View>
-
         <Text style={[styles.pageTitle, { fontSize: tokens.pageTitle }]}>Home</Text>
 
         <View
