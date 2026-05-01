@@ -12,6 +12,9 @@ export type CheckInternetMsg = {
 export type RecordingStoppedMsg = {
   type: 'recording_stopped';
   use_cloud: boolean;
+  // If set to false, server should skip synthesizing/sending TTS audio
+  // and only reply with textual response. Defaults to true if omitted.
+  play_tts_on_server?: boolean;
 };
 
 export type PiMessage = CheckInternetMsg | RecordingStoppedMsg;

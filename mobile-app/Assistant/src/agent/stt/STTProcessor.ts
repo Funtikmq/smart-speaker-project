@@ -76,7 +76,16 @@ export class STTProcessor {
         onPartial?.('Se trimite audio...');
         const pcm = buffer.toPCM16();
         ws.send(pcm);
-        ws.send(JSON.stringify({ type: 'recording_stopped' }));
+        // Inform server that the client (phone) prefers to handle TTS
+        // locally (native TTS). This hints the server to skip sending
+        // back synthesized audio. Default server behavior remains unchanged
+        // if this field is omitted (for Pi direct connections).
+        ws.send(
+          JSON.stringify({
+            type: 'recording_stopped',
+            play_tts_on_server: false,
+          }),
+        );
         onPartial?.('Se transcrie...');
       };
 

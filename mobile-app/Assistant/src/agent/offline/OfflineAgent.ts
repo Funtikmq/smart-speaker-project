@@ -15,9 +15,17 @@
  *   "at 8 AM"                      → "Alarm set for 8:00 AM today."
  */
 
-import { IntentClassifier, IntentName } from './IntentClassifier';
-import { ConversationContext } from './ConversationContext';
-import { TimeService, DateService, AlarmService } from '../../services';
+import {
+  IntentClassifier,
+  type IntentName,
+  ConversationContext,
+} from './index';
+import {
+  TimeService,
+  DateService,
+  AlarmService,
+  SpeechDateTimeParser,
+} from '../../services';
 
 export interface OfflineResponse {
   text: string;
@@ -33,6 +41,7 @@ const PARAM_QUESTIONS: Record<string, string> = {
 export class OfflineAgent {
   private classifier = new IntentClassifier();
   private context = new ConversationContext();
+  private parser = new SpeechDateTimeParser();
   private timeService = new TimeService();
   private dateService = new DateService();
   private alarmService = new AlarmService();
@@ -49,8 +58,18 @@ export class OfflineAgent {
     // ── Clasificare intenție nouă ─────────────────────────────────────────
     const result = this.classifier.classify(t);
     console.log(`[Offline] Intent: ${result.intent} (score: ${result.score})`);
+    const params: Record<string, string> = { ...result.params };
+    if (result.intent === 'alarm') {
+      const parsed = this.parser.parseAlarmInput(t);
+      if (parsed.time) {
+        params.time = parsed.time;
+      }
+      if (parsed.day) {
+        params.day = parsed.day;
+      }
+    }
 
-    return this._handleIntent(result.intent, result.params);
+    return this._handleIntent(result.intent, params);
   }
 
   // ─── Handler intenție ─────────────────────────────────────────────────────
@@ -88,7 +107,7 @@ export class OfflineAgent {
     params: Record<string, string>,
   ): Promise<OfflineResponse> {
     const required = this.classifier.getRequiredParams('alarm');
-    const missing = required.filter(p => !params[p]);
+    const missing = required.filter((paramName: string) => !params[paramName]);
 
     if (missing.length > 0) {
       this.context.start('alarm', params, missing);
@@ -127,14 +146,31 @@ export class OfflineAgent {
       `[Offline] Dialog în curs: intent=${pendingIntent}, aștept=${nextParam}`,
     );
 
-    const extracted = this._extractParam(nextParam, transcript);
+    if (pendingIntent === 'alarm') {
+      const extracted = this.parser.parseAlarmInput(transcript);
 
-    if (!extracted) {
-      const question = PARAM_QUESTIONS[nextParam] ?? 'Could you repeat that?';
-      return { text: `I didn't catch that. ${question}` };
+      if (extracted.time) {
+        this.context.addParam('time', extracted.time);
+      }
+
+      if (extracted.day) {
+        this.context.addParam('day', extracted.day);
+      }
+
+      if (!this.context.collectedParams[nextParam]) {
+        const question = PARAM_QUESTIONS[nextParam] ?? 'Could you repeat that?';
+        return { text: `I didn't catch that. ${question}` };
+      }
+    } else {
+      const extracted = this._extractParam(nextParam, transcript);
+
+      if (!extracted) {
+        const question = PARAM_QUESTIONS[nextParam] ?? 'Could you repeat that?';
+        return { text: `I didn't catch that. ${question}` };
+      }
+
+      this.context.addParam(nextParam, extracted);
     }
-
-    this.context.addParam(nextParam, extracted);
 
     if (this.context.isComplete()) {
       if (pendingIntent === 'alarm') {
@@ -153,6 +189,10 @@ export class OfflineAgent {
   private _extractParam(paramName: string, text: string): string | null {
     switch (paramName) {
       case 'time': {
+        const fromWords = this.parser.parseTimeFromWords(text);
+        if (fromWords) return fromWords;
+
+        // Fallback la regex pentru cifre (ex: "8:00 am", "14:30")
         const match = text.match(
           /(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
         );
@@ -163,18 +203,7 @@ export class OfflineAgent {
         return `${h}${m}${period}`;
       }
       case 'day': {
-        if (text.includes('tomorrow')) return 'tomorrow';
-        if (text.includes('today')) return 'today';
-        const days = [
-          'monday',
-          'tuesday',
-          'wednesday',
-          'thursday',
-          'friday',
-          'saturday',
-          'sunday',
-        ];
-        return days.find(d => text.includes(d)) ?? null;
+        return this.parser.extractDayReference(text);
       }
       default:
         return null;
