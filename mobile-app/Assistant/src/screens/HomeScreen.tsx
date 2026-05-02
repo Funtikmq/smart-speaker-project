@@ -14,6 +14,7 @@ import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import AppIcon from '../components/AppIcon';
 import { RootStackParamList } from '../navigation/types';
+import { useAgent, AgentPhase } from '../agent';
 import { getApiService } from '../services/ApiService';
 
 type HomeNavigation = NativeStackNavigationProp<RootStackParamList, 'Home'>;
@@ -44,6 +45,7 @@ const WARM_BG_2 = '#22160F';
 const WARM_BG_3 = '#2C1C12';
 const WARM_BORDER = '#3B2A1E';
 const WARM_BORDER_SOFT = 'rgba(242, 157, 78, 0.14)';
+const PI_MAC_ADDRESS = 'B8:27:EB:11:18:DC';
 
 export default function HomeScreen({ onOpenSettings }: Props) {
   const navigation = useNavigation<HomeNavigation>();
@@ -77,11 +79,17 @@ export default function HomeScreen({ onOpenSettings }: Props) {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [isConnected, setIsConnected] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
+  const { state: agentState } = useAgent(PI_MAC_ADDRESS);
+  const agentPhase: AgentPhase = agentState.phase;
+  const isSpeaking = agentPhase === 'speaking';
+  const isResponding = agentPhase === 'responding';
 
   const pulse = useRef(new Animated.Value(0)).current;
   const historyReveal = useRef(new Animated.Value(0)).current;
   const outerWave = useRef(new Animated.Value(0)).current;
   const innerGlow = useRef(new Animated.Value(0)).current;
+  const responsePulse = useRef(new Animated.Value(0)).current;
+  const responseSpin = useRef(new Animated.Value(0)).current;
   const wave1 = useRef(new Animated.Value(0.5)).current;
   const wave2 = useRef(new Animated.Value(0.8)).current;
   const wave3 = useRef(new Animated.Value(1)).current;
@@ -140,6 +148,32 @@ export default function HomeScreen({ onOpenSettings }: Props) {
       ]),
     );
 
+    const responsePulseLoop = Animated.loop(
+      Animated.sequence([
+        Animated.timing(responsePulse, {
+          toValue: 1,
+          duration: 420,
+          easing: Easing.out(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(responsePulse, {
+          toValue: 0,
+          duration: 420,
+          easing: Easing.in(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ]),
+    );
+
+    const responseSpinLoop = Animated.loop(
+      Animated.timing(responseSpin, {
+        toValue: 1,
+        duration: 1200,
+        easing: Easing.linear,
+        useNativeDriver: true,
+      }),
+    );
+
     const waves = [wave1, wave2, wave3, wave4, wave5].map((value, index) =>
       Animated.loop(
         Animated.sequence([
@@ -162,6 +196,8 @@ export default function HomeScreen({ onOpenSettings }: Props) {
     pulseLoop.start();
     outerWaveLoop.start();
     innerGlowLoop.start();
+    responsePulseLoop.start();
+    responseSpinLoop.start();
     waves.forEach((animation, index) => {
       setTimeout(() => animation.start(), index * 120);
     });
@@ -170,9 +206,11 @@ export default function HomeScreen({ onOpenSettings }: Props) {
       pulseLoop.stop();
       outerWaveLoop.stop();
       innerGlowLoop.stop();
+      responsePulseLoop.stop();
+      responseSpinLoop.stop();
       waves.forEach((animation) => animation.stop());
     };
-  }, [pulse, outerWave, innerGlow, wave1, wave2, wave3, wave4, wave5]);
+  }, [pulse, outerWave, innerGlow, responsePulse, responseSpin, wave1, wave2, wave3, wave4, wave5]);
 
   useEffect(() => {
     Animated.timing(historyReveal, {
@@ -248,6 +286,16 @@ export default function HomeScreen({ onOpenSettings }: Props) {
     outputRange: [0.18, 0.08, 0],
   });
 
+  const responseScale = responsePulse.interpolate({
+    inputRange: [0, 1],
+    outputRange: [1, 1.08],
+  });
+
+  const responseRotation = responseSpin.interpolate({
+    inputRange: [0, 1],
+    outputRange: ['0deg', '360deg'],
+  });
+
   const handleOpenSettings = () => {
     if (onOpenSettings) {
       onOpenSettings();
@@ -285,15 +333,14 @@ export default function HomeScreen({ onOpenSettings }: Props) {
             },
           ]}
         >
-          <Animated.View
+          <View
             style={[
               styles.travelWave,
               {
                 width: ringFieldSize * 0.76,
                 height: ringFieldSize * 0.76,
                 borderRadius: (ringFieldSize * 0.76) / 2,
-                transform: [{ scale: waveScale }],
-                opacity: waveOpacity,
+                opacity: isSpeaking ? 0.18 : 0,
               },
             ]}
           />
@@ -336,50 +383,75 @@ export default function HomeScreen({ onOpenSettings }: Props) {
                 width: coreSize + 70,
                 height: coreSize + 70,
                 borderRadius: (coreSize + 70) / 2,
+                opacity: isResponding ? 0.7 : 1,
               },
             ]}
           >
-            <Animated.View
+            <View
               style={[
                 styles.glowPulse,
                 {
-                  transform: [{ scale: glowScale }],
-                  opacity: glowOpacity,
+                  transform: [{ scale: 1 }],
+                  opacity: isResponding ? 0.6 : 0.36,
                 },
               ]}
             />
           </View>
 
-          <Animated.View
+          <View
             style={[
               styles.orbOuter,
               {
                 width: coreSize + 32,
                 height: coreSize + 32,
                 borderRadius: (coreSize + 32) / 2,
-                transform: [{ scale: pulseScale }],
-                opacity: pulseOpacity,
+                transform: [{ scale: 1 }],
+                opacity: 1,
               },
             ]}
           >
-            <View style={[styles.orbRing, { width: coreSize, height: coreSize, borderRadius: coreSize / 2 }]}>
+            <View
+              style={[
+                styles.orbRing,
+                {
+                  width: coreSize,
+                  height: coreSize,
+                  borderRadius: coreSize / 2,
+                  borderColor: isResponding ? '#7FD3FF' : WARM_BORDER,
+                },
+              ]}
+            >
               <View style={styles.orbInner}>
                 <View style={styles.waveWrap}>
-                  <Animated.View style={[styles.waveBar, { height: 12, transform: [{ scaleY: wave1 }] }]} />
-                  <Animated.View style={[styles.waveBar, { height: 18, transform: [{ scaleY: wave2 }] }]} />
-                  <Animated.View style={[styles.waveBar, { height: 30, transform: [{ scaleY: wave3 }] }]} />
-                  <Animated.View style={[styles.waveBar, { height: 20, transform: [{ scaleY: wave4 }] }]} />
-                  <Animated.View style={[styles.waveBar, { height: 13, transform: [{ scaleY: wave5 }] }]} />
+                    {isSpeaking ? (
+                    <>
+                      <View style={[styles.waveBar, { height: 12 }]} />
+                      <View style={[styles.waveBar, { height: 18 }]} />
+                      <View style={[styles.waveBar, { height: 30 }]} />
+                      <View style={[styles.waveBar, { height: 20 }]} />
+                      <View style={[styles.waveBar, { height: 13 }]} />
+                    </>
+                  ) : isResponding ? (
+                    <View style={styles.responseGlyphWrap}>
+                      <Text style={styles.responseGlyph}>↻</Text>
+                    </View>
+                  ) : (
+                    <View style={styles.idleDot} />
+                  )}
                 </View>
               </View>
             </View>
-          </Animated.View>
+          </View>
         </View>
 
         <View style={[styles.heroCopyWrap, { marginTop: tokens.topGap }]}>
           <Text style={[styles.infoTitle, { fontSize: tokens.titleSize }]}>How can I help you today?</Text>
           <Text style={[styles.infoMeta, { fontSize: tokens.metaSize, lineHeight: Math.round(tokens.metaSize * 1.45) }]}>
-            Your personal voice assistant is ready to assist you.
+            {isSpeaking
+              ? 'Voice is active and animating.'
+              : isResponding
+                ? 'Generating a response.'
+                : 'Your personal voice assistant is ready to assist you.'}
           </Text>
         </View>
 
@@ -482,7 +554,7 @@ export default function HomeScreen({ onOpenSettings }: Props) {
                   {index < HISTORY_ITEMS.length - 1 ? <View style={styles.historyDivider} /> : null}
                 </View>
               ))}
-            </Animated.View>
+          </Animated.View>
           ) : null}
         </View>
       </ScrollView>
@@ -645,6 +717,23 @@ const styles = StyleSheet.create({
   waveBar: {
     width: 4,
     borderRadius: 99,
+    backgroundColor: ACCENT_COLOR,
+  },
+  responseGlyphWrap: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  responseGlyph: {
+    color: '#7FD3FF',
+    fontSize: 26,
+    fontWeight: '900',
+  },
+  idleDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
     backgroundColor: ACCENT_COLOR,
   },
   heroCopyWrap: {

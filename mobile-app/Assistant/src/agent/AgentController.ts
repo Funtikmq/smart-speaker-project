@@ -73,9 +73,10 @@ export class AgentController {
   private offlineAgent: OfflineAgent;
   private audioBuffer = new AudioBuffer();
   private _chunksReceived = 0;
+  private _state: AgentState = INITIAL_STATE;
 
-  // Callback spre React hook
-  private _onStateChange: ((s: Partial<AgentState>) => void) | null = null;
+  // Multiple listeners so each screen can subscribe without clobbering the others.
+  private _stateListeners = new Set<(s: Partial<AgentState>) => void>();
 
   constructor(private readonly piMacAddress: string) {
     this.bt = new BluetoothAudioReceiver(piMacAddress);
@@ -127,7 +128,12 @@ export class AgentController {
     }
   }
 
-  disconnect(): void {
+  disconnect(force = false): void {
+    if (!force) {
+      console.log('[Agent] Ignoring non-forced disconnect request');
+      return;
+    }
+
     this.bt.disconnect();
     this.stt.destroy();
     this._emit(INITIAL_STATE);
@@ -233,12 +239,31 @@ export class AgentController {
   // ─── Emit stare ───────────────────────────────────────────────────────────
 
   private _emit(partial: Partial<AgentState>): void {
-    this._onStateChange?.(partial);
+    this._state = { ...this._state, ...partial };
+    this._stateListeners.forEach(listener => listener(partial));
   }
 
-  setStateListener(cb: (s: Partial<AgentState>) => void): void {
-    this._onStateChange = cb;
+  setStateListener(cb: (s: Partial<AgentState>) => void): () => void {
+    this._stateListeners.add(cb);
+    cb(this._state);
+    return () => {
+      this._stateListeners.delete(cb);
+    };
   }
+
+  getState(): AgentState {
+    return this._state;
+  }
+}
+
+// Shared controller singleton for the app — reuse across mounts
+let sharedAgentController: AgentController | null = null;
+
+function getSharedAgentController(piMacAddress: string): AgentController {
+  if (!sharedAgentController) {
+    sharedAgentController = new AgentController(piMacAddress);
+  }
+  return sharedAgentController;
 }
 
 // ─── React Hook ───────────────────────────────────────────────────────────────
@@ -248,15 +273,18 @@ export function useAgent(piMacAddress: string) {
   const controllerRef = useRef<AgentController | null>(null);
 
   useEffect(() => {
-    const controller = new AgentController(piMacAddress);
+    const controller = getSharedAgentController(piMacAddress);
     controllerRef.current = controller;
 
-    controller.setStateListener(partial => {
+    setState(controller.getState());
+
+    const unsubscribe = controller.setStateListener(partial => {
       setState(prev => ({ ...prev, ...partial }));
     });
 
+    // Do NOT disconnect the shared controller on unmount — only unsubscribe.
     return () => {
-      controller.disconnect();
+      unsubscribe();
       controllerRef.current = null;
     };
   }, [piMacAddress]);
@@ -266,7 +294,7 @@ export function useAgent(piMacAddress: string) {
   }, []);
 
   const disconnect = useCallback(() => {
-    controllerRef.current?.disconnect();
+    controllerRef.current?.disconnect(true);
   }, []);
 
   return { state, connect, disconnect };
