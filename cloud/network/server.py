@@ -19,7 +19,7 @@ async def handle_client(websocket):
     try:
         async for message in websocket:
 
-            # bytes → chunk audio de la Pi
+            # bytes → chunk audio PCM de la Pi
             if isinstance(message, bytes):
                 audio_buffer.extend(message)
 
@@ -45,6 +45,9 @@ async def handle_client(websocket):
                     await _process_audio(websocket, bytes(audio_buffer), play_tts_on_server)
                     audio_buffer.clear()
 
+                # ─── Flux telefon: STT deja făcut, primim textul direct ────────
+                elif cmd_type == "text_query":
+                    text = command.get("text", "").strip()
                     if not text:
                         continue
 
