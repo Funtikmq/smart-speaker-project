@@ -17,9 +17,12 @@ export default function App() {
       <StatusBar barStyle="light-content" backgroundColor="#1a1a2e" />
       <Stack.Navigator
         screenOptions={{
+          headerShown: false,
           headerStyle: { backgroundColor: '#1a1a2e' },
           headerTintColor: '#fff',
           contentStyle: { backgroundColor: '#1a1a2e' },
+          animationEnabled: true,
+          animationTypeForReplace: 'pop',
         }}
       >
         <Stack.Screen

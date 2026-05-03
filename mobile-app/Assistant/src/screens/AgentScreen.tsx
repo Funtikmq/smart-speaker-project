@@ -1,198 +1,38 @@
-import React from 'react';
-import {
-  View,
-  Text,
-  TouchableOpacity,
-  StyleSheet,
-  ScrollView,
-  SafeAreaView,
-} from 'react-native';
+import React, { useEffect, useMemo } from 'react';
+import { Pressable, ScrollView, StatusBar, Text, View, useWindowDimensions } from 'react-native';
+import { useNavigation } from '@react-navigation/native';
+import { NativeStackNavigationProp } from '@react-navigation/native-stack';
 import { useAgent, AgentPhase } from '../agent';
+import AppIcon from '../components/AppIcon';
+import AgentHeader from '../components/agent/AgentHeader';
+import ConnectionCard from '../components/agent/ConnectionCard';
+import StateCard from '../components/agent/StateCard';
+import TranscriptCards from '../components/agent/TranscriptCards';
+import { RootStackParamList } from '../navigation/types';
+import styles, { ACCENT_COLOR, WARM_BG } from '../styles/agent/AgentScreenStyles';
 
-// ─── Configurare ──────────────────────────────────────────────────────────────
+type AgentNavigation = NativeStackNavigationProp<RootStackParamList, 'Agent'>;
 const PI_MAC_ADDRESS = 'B8:27:EB:11:18:DC';
-
-// ─── Culori stare ─────────────────────────────────────────────────────────────
-const PHASE_COLORS: Record<AgentPhase, string> = {
-  idle: '#6c757d',
-  connecting: '#fd7e14',
-  listening: '#0d6efd',
-  processing: '#6f42c1',
-  responding: '#198754',
-  speaking: '#0dcaf0',
-  error: '#dc3545',
-};
-
-const PHASE_LABELS: Record<AgentPhase, string> = {
-  idle: '⏸  Aștept wake word...',
-  connecting: '🔄 Conectare la Pi...',
-  listening: '🎙  Ascult audio de la Pi',
-  processing: '⚙️  Procesez audio...',
-  responding: '🤖 Generez răspuns...',
-  speaking: '🔊 Răspund...',
-  error: '❌ Eroare',
-};
-
-// ─── Componenta ───────────────────────────────────────────────────────────────
+const PHASE_META: Record<AgentPhase, { label: string; color: string }> = { idle: { label: 'Ready for wake word', color: '#6A7193' }, connecting: { label: 'Connecting to Pi', color: '#FF9800' }, listening: { label: 'Listening for audio', color: '#4D9BFF' }, processing: { label: 'Processing audio', color: '#F29D4E' }, responding: { label: 'Generating response', color: '#48C78E' }, speaking: { label: 'Speaking response', color: '#55C5E8' }, error: { label: 'Agent error', color: '#FF6B6B' } };
+const WARM_BG_2 = '#22160F';
+const WARM_BG_3 = '#2C1C12';
+const WARM_BORDER = '#3B2A1E';
+function clamp(value: number, min: number, max: number) { return Math.min(Math.max(value, min), max); }
 
 export default function AgentScreen() {
+  const navigation = useNavigation<AgentNavigation>();
+  const { width, height } = useWindowDimensions();
+  const scale = clamp(width / 390, 0.8, 1.2), verticalScale = clamp(height / 844, 0.85, 1.15), isSmall = width <= 370, isCompact = height <= 650;
   const { state, connect, disconnect } = useAgent(PI_MAC_ADDRESS);
-  const {
-    phase,
-    btStatus,
-    transcript,
-    partialText,
-    response,
-    error,
-    audioStats,
-  } = state;
-
-  const isConnected = btStatus !== 'disconnected' && btStatus !== 'error';
-
-  return (
-    <SafeAreaView style={styles.container}>
-      <ScrollView contentContainerStyle={styles.scroll}>
-        {/* Status Bluetooth */}
-        <View style={styles.card}>
-          <Text style={styles.label}>Bluetooth</Text>
-          <Text
-            style={[
-              styles.status,
-              { color: isConnected ? '#198754' : '#6c757d' },
-            ]}
-          >
-            {isConnected ? `✓ Conectat — ${PI_MAC_ADDRESS}` : '○ Deconectat'}
-          </Text>
-        </View>
-
-        {/* Faza curentă */}
-        <View
-          style={[styles.phaseBar, { backgroundColor: PHASE_COLORS[phase] }]}
-        >
-          <Text style={styles.phaseText}>{PHASE_LABELS[phase]}</Text>
-        </View>
-
-        {/* Statistici audio — vizibile în faza listening */}
-        {phase === 'listening' && (
-          <View style={styles.card}>
-            <Text style={styles.label}>Audio primit de la Pi</Text>
-            <Text style={styles.stat}>Chunks: {audioStats.chunksReceived}</Text>
-            <Text style={styles.stat}>
-              Durată: {audioStats.durationSeconds.toFixed(1)}s
-            </Text>
-            <Text style={styles.stat}>
-              Total: {(audioStats.totalBytes / 1024).toFixed(1)} KB
-            </Text>
-          </View>
-        )}
-
-        {/* Text parțial în timp real */}
-        {partialText.length > 0 && (
-          <View style={styles.card}>
-            <Text style={styles.label}>Transcriere (live)</Text>
-            <Text style={styles.partial}>{partialText}</Text>
-          </View>
-        )}
-
-        {/* Transcriere finală */}
-        {transcript.length > 0 && (
-          <View style={[styles.card, styles.transcriptCard]}>
-            <Text style={styles.label}>Ai spus</Text>
-            <Text style={styles.transcript}>{transcript}</Text>
-          </View>
-        )}
-
-        {/* Răspuns asistent */}
-        {response.length > 0 && (
-          <View style={[styles.card, styles.responseCard]}>
-            <Text style={styles.label}>Asistent</Text>
-            <Text style={styles.response}>{response}</Text>
-          </View>
-        )}
-
-        {/* Eroare */}
-        {error && (
-          <View style={[styles.card, styles.errorCard]}>
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Butoane */}
-        <View style={styles.buttonRow}>
-          {!isConnected ? (
-            <TouchableOpacity style={styles.btnConnect} onPress={connect}>
-              <Text style={styles.btnText}>Conectează la Pi</Text>
-            </TouchableOpacity>
-          ) : (
-            <TouchableOpacity style={styles.btnDisconnect} onPress={disconnect}>
-              <Text style={styles.btnText}>Deconectează</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-
-        {/* Info pentru debug */}
-        <View style={styles.debugBox}>
-          <Text style={styles.debugText}>
-            btStatus: {btStatus}
-            {'\n'}
-            phase: {phase}
-            {'\n'}
-            chunks: {audioStats.chunksReceived}
-          </Text>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  );
+  const { phase, btStatus, transcript, partialText, response, error, audioStats } = state;
+  const phaseMeta = PHASE_META[phase], isConnected = btStatus !== 'disconnected' && btStatus !== 'error';
+  console.log('[AgentScreen RENDER] phase:', phase, '| btStatus:', btStatus, '| phaseMeta.label:', phaseMeta.label);
+  const statusColor = isConnected ? phaseMeta.color : '#FF6B6B';
+  const isDisconnectedCheck = btStatus === 'disconnected'; console.log('[AgentScreen TEXT] btStatus === "disconnected"?', isDisconnectedCheck);
+  const stateStatusText = 'Assistant is not connected'; console.log('[AgentScreen TEXT FINAL - HARD FIX] stateStatusText will render as:', stateStatusText);
+  const stateStatusDetail = 'Connect to Pi to start listening.';
+  useEffect(() => { console.log('[AgentScreen] btStatus CHANGED TO:', btStatus, '| stateStatusText will be:', stateStatusText, '| stateStatusDetail will be:', stateStatusDetail); }, [btStatus]);
+  const handleDisconnect = () => { console.log('[AgentScreen] DISCONNECT button pressed, current btStatus:', btStatus); disconnect(); };
+  const tokens = useMemo(() => ({ pad: Math.round(isSmall ? 12 : 16 * scale), navLabel: Math.round(12 * scale), cardRadius: Math.round(14 * scale), pageTitle: Math.round(30 * scale), sectionGap: Math.round(isCompact ? 10 : 16 * verticalScale), iconTile: Math.round(40 * scale) }), [isSmall, isCompact, scale, verticalScale]);
+  return (<View style={styles.root}><StatusBar barStyle="light-content" backgroundColor={WARM_BG} /><ScrollView contentContainerStyle={[styles.content, { paddingHorizontal: tokens.pad, paddingBottom: Math.round(isCompact ? 80 : 100), maxWidth: 550, alignSelf: 'center', gap: tokens.sectionGap }]} showsVerticalScrollIndicator={false}><AgentHeader onGoBack={() => navigation.navigate('Home')} isConnected={isConnected} pageTitle={tokens.pageTitle} /><Text style={styles.sectionLabel}>CONNECTION</Text><ConnectionCard isConnected={isConnected} macAddress={PI_MAC_ADDRESS} onConnect={connect} onDisconnect={handleDisconnect} cardRadius={tokens.cardRadius} iconTile={tokens.iconTile} /><Text style={styles.sectionLabel}>STATE</Text><StateCard isConnected={isConnected} phase={phase} phaseLabel={phaseMeta.label} phaseColor={phaseMeta.color} audioStats={audioStats} cardRadius={tokens.cardRadius} /><TranscriptCards partialText={partialText} transcript={transcript} response={response} error={error} cardRadius={tokens.cardRadius} /></ScrollView><View style={styles.navWrapper}><View style={styles.bottomNav}><Pressable style={styles.navItem} onPress={() => navigation.navigate('Home')}><AppIcon name="wifi" size={18} color="#B88D69" /><Text style={[styles.navLabel, { fontSize: tokens.navLabel }]}>Home</Text></Pressable><Pressable style={styles.navItem}><AppIcon name="agent" size={18} color={ACCENT_COLOR} /><Text style={[styles.navLabelActive, { fontSize: tokens.navLabel }]}>Assistant</Text><View style={styles.activeDot} /></Pressable><Pressable style={styles.navItem} onPress={() => navigation.navigate('Settings')}><AppIcon name="settings" size={18} color="#B88D69" /><Text style={[styles.navLabel, { fontSize: tokens.navLabel }]}>Settings</Text></Pressable></View></View></View>);
 }
-
-// ─── Stiluri ──────────────────────────────────────────────────────────────────
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#f8f9fa' },
-  scroll: { padding: 16, gap: 12 },
-  card: {
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    elevation: 2,
-  },
-  transcriptCard: { borderLeftWidth: 4, borderLeftColor: '#0d6efd' },
-  responseCard: { borderLeftWidth: 4, borderLeftColor: '#198754' },
-  errorCard: { backgroundColor: '#f8d7da' },
-  label: {
-    fontSize: 11,
-    fontWeight: '600',
-    color: '#6c757d',
-    textTransform: 'uppercase',
-    marginBottom: 6,
-  },
-  status: { fontSize: 15, fontWeight: '500' },
-  stat: { fontSize: 14, color: '#495057', lineHeight: 22 },
-  partial: { fontSize: 16, color: '#6c757d', fontStyle: 'italic' },
-  transcript: { fontSize: 18, color: '#212529', lineHeight: 26 },
-  response: { fontSize: 16, color: '#212529', lineHeight: 24 },
-  errorText: { fontSize: 14, color: '#721c24' },
-  phaseBar: { borderRadius: 10, padding: 14, alignItems: 'center' },
-  phaseText: { color: '#fff', fontSize: 15, fontWeight: '600' },
-  buttonRow: { alignItems: 'center', marginTop: 8 },
-  btnConnect: {
-    backgroundColor: '#0d6efd',
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-  },
-  btnDisconnect: {
-    backgroundColor: '#6c757d',
-    borderRadius: 10,
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-  },
-  btnText: { color: '#fff', fontSize: 16, fontWeight: '600' },
-  debugBox: {
-    backgroundColor: '#f1f3f5',
-    borderRadius: 8,
-    padding: 12,
-    marginTop: 8,
-  },
-  debugText: { fontSize: 11, color: '#868e96', fontFamily: 'monospace' },
-});
