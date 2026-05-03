@@ -16,6 +16,7 @@ Stream-ul este deținut de SharedMicStream și callback-ul
 recorderului este înregistrat acolo.
 """
 
+import struct
 import wave
 import queue
 import logging
@@ -43,10 +44,6 @@ logger = logging.getLogger(__name__)
 def _resample(audio_f32: np.ndarray, orig_fs: int, target_fs: int) -> np.ndarray:
     if orig_fs == target_fs:
         return audio_f32
-    # Fast-path pentru rapoarte întregi (ex: 48k -> 16k) pe hardware slab.
-    if orig_fs % target_fs == 0:
-        step = orig_fs // target_fs
-        return audio_f32[::step].astype(np.float32, copy=False)
     duration = len(audio_f32) / orig_fs
     orig_idx = np.linspace(0, duration, len(audio_f32))
     new_idx = np.linspace(0, duration, int(duration * target_fs))
@@ -72,16 +69,15 @@ class AudioRecorder:
         max_queue_size: int = RECORDER_QUEUE_SIZE,
     ):
         self.chunk_size = chunk_size
-        self.chunk_bytes = chunk_size * SAMPLE_WIDTH_BYTES
         self.running = False
 
         self.queue: queue.Queue[bytes] = queue.Queue(maxsize=max_queue_size)
 
-        # Buffer intern bytes PCM16 pentru asamblare chunk-uri.
-        self._pcm_buffer = bytearray()
+        # buffer intern pentru asamblarea chunk-urilor
+        self._pcm_buffer: list[int] = []
 
-        # Toate sample-urile înregistrate (PCM16 bytes) — pentru save_wav.
-        self._all_samples = bytearray()
+        # toate sample-urile înregistrate (int16) — pentru save_wav
+        self._all_samples: list[int] = []
 
         # VAD
         self._silence_counter = 0
@@ -148,16 +144,17 @@ class AudioRecorder:
             if self.on_silence:
                 self.on_silence()
 
-        # Lucrăm direct pe bytes pentru a evita conversii costisitoare în callback.
-        pcm_bytes = samples_i16.tobytes()
-        self._pcm_buffer.extend(pcm_bytes)
-        self._all_samples.extend(pcm_bytes)
+        # Adaugă samples în buffer intern și în istoric complet
+        samples_list = samples_i16.tolist()
+        self._pcm_buffer.extend(samples_list)
+        self._all_samples.extend(samples_list)
 
-        # Emite chunks complete în queue.
-        while len(self._pcm_buffer) >= self.chunk_bytes:
-            frame = bytes(self._pcm_buffer[:self.chunk_bytes])
-            del self._pcm_buffer[:self.chunk_bytes]
-            self._enqueue(frame)
+        # Emite chunks complete în queue
+        while len(self._pcm_buffer) >= self.chunk_size:
+            frame = self._pcm_buffer[:self.chunk_size]
+            del self._pcm_buffer[:self.chunk_size]
+            pcm_bytes = struct.pack(f"<{len(frame)}h", *frame)
+            self._enqueue(pcm_bytes)
 
     # ─── Queue ────────────────────────────────────────────────────────────────
 
@@ -190,14 +187,12 @@ class AudioRecorder:
             logger.warning("Nicio înregistrare de salvat.")
             return None
 
-        samples = np.frombuffer(self._all_samples, dtype=np.int16)
-        stereo = np.repeat(samples[:, None], 2, axis=1).reshape(-1)
-
         with wave.open(filename, "w") as wf:
             wf.setnchannels(AUDIO_CHANNELS)
             wf.setsampwidth(SAMPLE_WIDTH_BYTES)
             wf.setframerate(SAMPLE_RATE)
-            wf.writeframes(stereo.astype(np.int16, copy=False).tobytes())
+            for s in self._all_samples:
+                wf.writeframesraw(struct.pack("<hh", s, s))  # stereo duplicat
 
-        logger.info(f"WAV salvat: {filename} ({len(samples)} samples @ {SAMPLE_RATE}Hz)")
+        logger.info(f"WAV salvat: {filename} ({len(self._all_samples)} samples @ {SAMPLE_RATE}Hz)")
         return filename

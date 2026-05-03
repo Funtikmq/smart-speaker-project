@@ -46,7 +46,7 @@ def _to_wav(mp3_bytes: bytes, sample_rate: int) -> bytes:
 
 
 def synthesize(text: str, lang: str = config.TTS_LANGUAGE) -> bytes:
-    """Convertește text în audio; preferă WAV pentru redare mai ușoară pe Pi."""
+    """Convertește text în audio MP3 folosind gTTS."""
     logger.info(f"Generare TTS pentru: '{text[:50]}...'")
     tts = gTTS(text=text, lang=lang, slow=False)
     buf = io.BytesIO()
