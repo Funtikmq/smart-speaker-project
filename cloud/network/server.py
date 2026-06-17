@@ -89,18 +89,29 @@ async def _process_text(websocket, text: str, play_tts_on_server: bool = True):
     """Primește text → AI → (opțional TTS) → trimite răspuns înapoi."""
 
     # ─── AI ───────────────────────────────────────────────────────────────────
-    # response_text = ai.respond(text)          # decomentează când va fi Claude configurat
-    response_text = f"You said: {text}"          # placeholder simplu
+    ai_response = ai.respond(text)
+    
+    response_text = ai_response.get("text", "").strip()
+    action = ai_response.get("action")
+    action_payload = ai_response.get("action_payload")
 
-    logger.info(f"Răspuns AI: {response_text}")
+    logger.info(f"Răspuns AI: {response_text} | Acțiune: {action}")
 
-    await websocket.send(json.dumps({
-        "type": "response",
-        "text": response_text,
-    }))
+    if response_text:
+        await websocket.send(json.dumps({
+            "type": "response",
+            "text": response_text,
+        }))
+
+    if action:
+        await websocket.send(json.dumps({
+            "type": "command",
+            "command": action,
+            "payload": action_payload
+        }))
 
     # ─── TTS ──────────────────────────────────────────────────────────────────
-    if play_tts_on_server:
+    if play_tts_on_server and response_text:
         try:
             audio_bytes = tts.synthesize(response_text)
             await websocket.send(audio_bytes)
@@ -108,4 +119,8 @@ async def _process_text(websocket, text: str, play_tts_on_server: bool = True):
         except Exception as e:
             logger.warning(f"Eroare la sintetizare TTS server: {e}")
     else:
-        logger.info("Client requested no server TTS; skipping cloud TTS.")
+        logger.info("Fără TTS de trimis (fie nu e cerut, fie nu există text).")
+
+    await websocket.send(json.dumps({
+        "type": "done"
+    }))

@@ -39,9 +39,18 @@ export class ConversationContext {
     return this._state.missingParams[0] ?? null;
   }
 
-  /**
-   * Începe o nouă intenție cu parametrii deja colectați și cei lipsă.
-   */
+  isPending(): boolean {
+    return this.hasPendingIntent;
+  }
+
+  isWaitingFor(paramName: string): boolean {
+    return this.nextMissingParam === paramName;
+  }
+
+  isWaitingForAlarmTime(): boolean {
+    return this.pendingIntent === 'alarm' && this.isWaitingFor('time');
+  }
+
   start(
     intent: string,
     collected: Record<string, string>,

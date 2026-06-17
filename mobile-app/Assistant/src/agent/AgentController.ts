@@ -1,25 +1,22 @@
 /**
  * AgentController.ts
  *
- * Creierul agentului — descrie fluxul real implementat acum:
+ * Agent controller - describes the current runtime flow:
  *
  * Flow actual:
  *   1. Pi detectează wake word și pornește recorderul.
  *   2. Pi trimite PCM chunks prin RFCOMM la aplicația mobilă.
- *   3. Telefonul bufferizează audio; la `recording_stopped` decide în funcție
- *      de flag-ul `use_cloud` primit de la Pi:
- *        - `use_cloud = true`:
- *            • telefonul trimite PCM la serverul cloud (WebSocket)
- *            • redăm `response` cu TTS nativ pe telefon (audio va fi transmis
- *              către Pi prin A2DP/streaming), apoi trimitem `tts_done` la Pi
- *        - `use_cloud = false`:
- *            • telefonul folosește STT local (Vosk), procesează intentul local
- *   4. Raw audio TTS primit direct de la server este ignorat în aplicație —
- *      preferăm redare nativă pe telefon pentru consistență A2DP.
+ *   3. The phone always runs local Vosk STT first.
+ *   4. The transcript is routed locally or forwarded to cloud based on the
+ *      detected intent.
+ *   5. Raw TTS audio received directly from the server is ignored by the app;
+ *      native phone TTS keeps playback consistent through A2DP.
  *
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Linking } from 'react-native';
+import NetInfo from '@react-native-community/netinfo';
 import {
   BluetoothAudioReceiver,
   BtStatus,
@@ -28,16 +25,17 @@ import { AudioBuffer } from './bluetooth/AudioBuffer';
 import { STTProcessor, STTResult } from './stt/STTProcessor';
 import { TTSPlayer } from './tts/TTSPlayer';
 import { OfflineAgent } from './offline/OfflineAgent';
+import { IntentClassifier } from './offline/IntentClassifier';
 
 // ─── Tipuri stare ─────────────────────────────────────────────────────────────
 
 export type AgentPhase =
-  | 'idle' // Așteptăm wake word pe Pi
-  | 'connecting' // Ne conectăm la Pi prin Bluetooth
-  | 'listening' // Pi înregistrează, primim audio
-  | 'processing' // Am primit tot audio-ul, facem STT
-  | 'responding' // Am textul, generăm răspunsul
-  | 'speaking' // Redăm TTS
+  | 'idle' // Waiting for the wake word on the Pi
+  | 'connecting' // Connecting to the Pi over Bluetooth
+  | 'listening' // The Pi is recording and we are receiving audio
+  | 'processing' // We received all audio and are running STT
+  | 'responding' // We have text and are deciding how to answer
+  | 'speaking' // We are playing TTS
   | 'error';
 
 export interface AgentState {
@@ -71,6 +69,8 @@ export class AgentController {
   private stt: STTProcessor;
   private tts: TTSPlayer;
   private offlineAgent: OfflineAgent;
+  private intentClassifier: IntentClassifier;
+  private _acceptCloudCallbacks = false;
   private audioBuffer = new AudioBuffer();
   private _chunksReceived = 0;
   private _state: AgentState = INITIAL_STATE;
@@ -83,27 +83,55 @@ export class AgentController {
     this.stt = new STTProcessor();
     this.tts = new TTSPlayer();
     this.offlineAgent = new OfflineAgent();
+    this.intentClassifier = new IntentClassifier();
 
-    // Vosk offline — inițializăm în background
-    this.stt.initVosk().catch(e => console.warn('[Agent] Vosk init:', e));
+    // Vosk offline - initialize in the background.
+    this.stt
+      .initVosk()
+      .catch(e => console.warn('[Agent] Vosk init failed:', e));
 
-    // Când serverul trimite răspuns text → afișăm în UI și redăm prin TTS nativ
+    // When the server sends text, update the UI and speak it natively.
     this.stt._onResponseText = async (text: string) => {
+      if (!this._acceptCloudCallbacks) {
+        console.log('[Agent] Ignoring stale cloud response text callback.');
+        return;
+      }
+
       this._emit({ response: text, phase: 'speaking' });
       try {
         await this.tts.speak(text, false);
-        // Semnalăm Pi-ului că TTS s-a terminat
         await this.bt.sendCommand({ type: 'tts_done' });
-        console.log('[Agent] tts_done trimis la Pi (online)');
+        console.log('[Agent] Sent tts_done to Pi (cloud flow)');
       } catch (err) {
-        console.warn('[Agent] Eroare la redare TTS nativ:', err);
+        console.warn('[Agent] Native TTS playback failed:', err);
       }
     };
 
-    // Când serverul trimite audio TTS raw — ignorăm (vom reda textul nativ)
+    this.stt._onCommand = async (commandMsg: any) => {
+      if (!this._acceptCloudCallbacks) {
+        console.log('[Agent] Ignoring stale cloud command callback.');
+        return;
+      }
+
+      console.log(
+        `[Agent] Command received from server: ${JSON.stringify(commandMsg)}`,
+      );
+      if (commandMsg.command === 'play_youtube' && commandMsg.payload?.url) {
+        // Open it on the phone; audio will route to the speaker over A2DP.
+        console.log(`[Agent] Opening on phone: ${commandMsg.payload.url}`);
+        Linking.openURL(commandMsg.payload.url).catch(err =>
+          console.error('[Agent] Linking.openURL failed:', err),
+        );
+      } else {
+        console.log('[Agent] Forwarding command to the Pi...');
+        await this.bt.sendCommand(commandMsg);
+      }
+    };
+
+    // Ignore raw TTS audio from the server and prefer native playback.
     this.stt._onTTSReceived = (audioBytes: Uint8Array) => {
       console.log(
-        `[Agent] Ignor audio TTS raw de la server (${audioBytes.length} bytes)`,
+        `[Agent] Ignoring raw TTS audio from server (${audioBytes.length} bytes)`,
       );
     };
 
@@ -120,7 +148,7 @@ export class AgentController {
     try {
       await this.tts.init();
       await this.bt.connect();
-      console.log('[Agent] Conectat la Pi, gata de ascultare.');
+      console.log('[Agent] Connected to Pi and ready to listen.');
       this._emit({ phase: 'idle' });
     } catch (err: any) {
       this._emit({ phase: 'error', error: err.message });
@@ -191,7 +219,7 @@ export class AgentController {
     try {
       const result = await this.stt.transcribe(
         this.audioBuffer,
-        useCloud,
+        false,
         partial => this._emit({ partialText: partial }),
       );
 
@@ -201,24 +229,70 @@ export class AgentController {
         phase: 'responding',
       });
 
-      if (useCloud) {
-        await this._handleOnline(result);
+      if (this._shouldUseCloud(result.text)) {
+        await this._handleCloud(result.text);
       } else {
         await this._handleOffline(result);
       }
     } catch (err: any) {
-      console.error('[Agent] Eroare procesare:', err);
-      this._emit({ phase: 'error', error: err.message });
+      console.error('[Agent] Processing failed:', err);
+      this._emit({
+        phase: 'error',
+        error: err.message || 'Processing failed.',
+      });
     } finally {
       setTimeout(() => this._emit({ phase: 'idle', partialText: '' }), 3000);
     }
   }
 
-  // ─── Online ───────────────────────────────────────────────────────────────
+  private _shouldUseCloud(text: string): boolean {
+    if (this.offlineAgent.hasPendingContext()) {
+      return false;
+    }
 
-  private async _handleOnline(sttResult: STTResult): Promise<void> {
-    // STTProcessor gestionează transcrierea, răspunsul și TTS-ul prin callbacks.
-    console.log(`[Agent] Online flow complet: "${sttResult.text}"`);
+    const intent = this.intentClassifier.classify(text).intent;
+    return intent === 'unknown';
+  }
+
+  // ─── Cloud ───────────────────────────────────────────────────────────────
+
+  private async _handleCloud(text: string): Promise<void> {
+    this._acceptCloudCallbacks = false;
+
+    const netState = await NetInfo.fetch();
+    const online = !!netState.isConnected && !!netState.isInternetReachable;
+
+    if (!online) {
+      const feedback =
+        'No internet connection is available for cloud requests.';
+      this._emit({ response: feedback, phase: 'speaking' });
+      await this.tts.speak(feedback, false);
+      await this.bt.sendCommand({ type: 'tts_done' });
+      console.log('[Agent] Cloud request blocked: no internet connection.');
+      return;
+    }
+
+    console.log(`[Agent] Sending request to cloud: "${text}"`);
+
+    try {
+      this._acceptCloudCallbacks = true;
+      await this.stt.queryCloud(text);
+      console.log('[Agent] Cloud flow completed.');
+    } catch (err) {
+      this._acceptCloudCallbacks = false;
+      const feedback =
+        'Cloud service is unavailable right now. Please try again later.';
+      this._emit({ response: feedback, phase: 'speaking' });
+      try {
+        await this.tts.speak(feedback, false);
+        await this.bt.sendCommand({ type: 'tts_done' });
+      } catch (speechError) {
+        console.warn('[Agent] Cloud fallback speech error:', speechError);
+      }
+      console.warn('[Agent] Cloud request failed:', err);
+    } finally {
+      this._acceptCloudCallbacks = false;
+    }
   }
 
   // ─── Offline ──────────────────────────────────────────────────────────────
@@ -226,14 +300,13 @@ export class AgentController {
   private async _handleOffline(sttResult: STTResult): Promise<void> {
     const response = await this.offlineAgent.process(sttResult.text);
     this._emit({ response: response.text, phase: 'speaking' });
-    console.log(`[Agent] Offline răspuns: "${response.text}"`);
+    console.log(`[Agent] Local response: "${response.text}"`);
 
-    // TTS nativ — audio ajunge la Pi automat prin Bluetooth (call & media)
+    // Native TTS - audio reaches the Pi automatically through Bluetooth.
     await this.tts.speak(response.text, false);
 
-    // Semnalăm Pi-ului că TTS s-a terminat
     await this.bt.sendCommand({ type: 'tts_done' });
-    console.log('[Agent] tts_done trimis la Pi');
+    console.log('[Agent] Sent tts_done to Pi');
   }
 
   // ─── Emit stare ───────────────────────────────────────────────────────────

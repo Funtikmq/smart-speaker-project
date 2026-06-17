@@ -32,6 +32,10 @@ from .audio_config import (
     VAD_RMS_THRESHOLD,    # prag energie pentru silențiu
     VAD_SILENCE_FRAMES,   # câte frame-uri consecutive sub prag = silențiu
     VAD_MIN_RECORD_SECONDS,
+    VAD_ADAPTIVE_MODE,    # activează calibrare dinamică
+    VAD_CALIBRATION_FRAMES,
+    VAD_THRESHOLD_MULTIPLIER,
+    VAD_NOISE_GATE_DB,
     REC_FILE,
 )
 
@@ -89,6 +93,12 @@ class AudioRecorder:
         self._frames_seen = 0
         self.on_silence: callable = None   # callback setat de Assistant
 
+        # ─── VAD adaptiv ───────────────────────────────────────────────────────
+        self._adaptive_threshold = VAD_RMS_THRESHOLD  # prag inițial
+        self._noise_floor_rms = VAD_RMS_THRESHOLD    # va fi actualizat la calibrare
+        self._calibration_frames_count = 0
+        self._rms_history = []  # pentru statistici
+
     # ─── Activare / dezactivare ───────────────────────────────────────────────
 
     def start(self):
@@ -98,8 +108,11 @@ class AudioRecorder:
         self._silence_counter = 0
         self._silence_detected = False
         self._frames_seen = 0
+        self._calibration_frames_count = 0
+        self._rms_history = []
+        self._adaptive_threshold = VAD_RMS_THRESHOLD  # reset la valoare inițială
         self.running = True
-        logger.info("AudioRecorder activ — înregistrare...")
+        logger.info("AudioRecorder activ — înregistrare... (VAD Adaptiv ON)" if VAD_ADAPTIVE_MODE else "AudioRecorder activ — înregistrare...")
 
     def stop(self):
         """Dezactivează colectarea. SharedMicStream rămâne deschis."""
@@ -133,7 +146,25 @@ class AudioRecorder:
         min_frames_before_stop = int((VAD_MIN_RECORD_SECONDS * MIC_SAMPLE_RATE) / len(indata))
 
         rms = float(np.sqrt(np.mean(samples_i16.astype(np.float32) ** 2)))
-        if rms < VAD_RMS_THRESHOLD:
+        self._rms_history.append(rms)
+
+        # ─── Calibrare adaptivă ─────────────────────────────────────────────
+        if VAD_ADAPTIVE_MODE and self._calibration_frames_count < VAD_CALIBRATION_FRAMES:
+            self._calibration_frames_count += 1
+            # În primele cadre, estimează zgomotul de fond (fără vorbire)
+            if self._calibration_frames_count == VAD_CALIBRATION_FRAMES:
+                self._noise_floor_rms = np.median(self._rms_history[-VAD_CALIBRATION_FRAMES:])
+                self._adaptive_threshold = self._noise_floor_rms * VAD_THRESHOLD_MULTIPLIER
+                logger.info(
+                    f"VAD calibrat: noise_floor={self._noise_floor_rms:.1f}, "
+                    f"threshold={self._adaptive_threshold:.1f}"
+                )
+
+        # Determină pragul folosit (adaptiv sau fix)
+        threshold_used = self._adaptive_threshold if VAD_ADAPTIVE_MODE else VAD_RMS_THRESHOLD
+
+        # ─── Detectare silențiu ──────────────────────────────────────────────
+        if rms < threshold_used:
             self._silence_counter += 1
         else:
             self._silence_counter = 0
@@ -144,7 +175,9 @@ class AudioRecorder:
             and not self._silence_detected
         ):
             self._silence_detected = True
-            logger.info(f"VAD: silențiu detectat (RMS={rms:.1f})")
+            logger.info(
+                f"VAD: silențiu detectat (RMS={rms:.1f}, prag={threshold_used:.1f})"
+            )
             if self.on_silence:
                 self.on_silence()
 

@@ -18,12 +18,19 @@ TTS_OUTPUT_FORMAT = "wav"      # "wav" reduce CPU pe Pi la redare
 TTS_OUTPUT_SAMPLE_RATE = 16000
 
 # ─── AI ───────────────────────────────────────────────────────────────────────
-ANTHROPIC_API_KEY = "g6IhOMSxrvuexAz7NOGSUBG8DejqrWcJ3BSb1tmcRTGUlDOtdRroLg=="
-CLAUDE_MODEL = "claude-sonnet-4-20250514"
-CLAUDE_MAX_TOKENS = 1024
-CLAUDE_SYSTEM_PROMPT = """Ești un asistent vocal inteligent.
-Răspunsurile tale trebuie să fie concise și clare, potrivite pentru redare audio.
-Evită listele lungi și formatarea markdown — vorbește natural."""
+import os
+
+ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+CLAUDE_MODEL = "claude-opus-4-7"
+CLAUDE_MAX_TOKENS = 128
+CLAUDE_MAX_CHARS = 400
+CLAUDE_LANGUAGE = "en"
+CLAUDE_SYSTEM_PROMPT = """You are a helpful voice assistant.
+Keep responses short and clear for audio playback.
+Respond in English.
+Use plain text only and write as if the answer will be spoken aloud.
+Do not use markdown, emphasis, bullet lists, code fences, quotes used as formatting, or special markup characters such as *, _, #, `, >, or [].
+Avoid symbols that may be read out loud or distort natural speech."""
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 LOG_LEVEL = "INFO"

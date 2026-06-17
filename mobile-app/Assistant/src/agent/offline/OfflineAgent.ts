@@ -46,16 +46,20 @@ export class OfflineAgent {
   private dateService = new DateService();
   private alarmService = new AlarmService();
 
+  hasPendingContext(): boolean {
+    return this.context.hasPendingIntent;
+  }
+
   async process(transcript: string): Promise<OfflineResponse> {
     const t = transcript.toLowerCase().trim();
-    console.log(`[Offline] Procesez: "${t}"`);
+    console.log(`[Offline] Processing: "${t}"`);
 
-    // ── Dialog în curs ────────────────────────────────────────────────────
+    // ── Ongoing dialog ────────────────────────────────────────────────────
     if (this.context.hasPendingIntent) {
       return this._continueDialog(t);
     }
 
-    // ── Clasificare intenție nouă ─────────────────────────────────────────
+    // ── New intent classification ─────────────────────────────────────────
     const result = this.classifier.classify(t);
     console.log(`[Offline] Intent: ${result.intent} (score: ${result.score})`);
     const params: Record<string, string> = { ...result.params };
@@ -72,7 +76,7 @@ export class OfflineAgent {
     return this._handleIntent(result.intent, params);
   }
 
-  // ─── Handler intenție ─────────────────────────────────────────────────────
+  // ─── Intent handler ─────────────────────────────────────────────────────
 
   private async _handleIntent(
     intent: IntentName,
@@ -101,7 +105,7 @@ export class OfflineAgent {
     }
   }
 
-  // ─── Alarmă ───────────────────────────────────────────────────────────────
+  // ─── Alarm ───────────────────────────────────────────────────────────────
 
   private async _handleAlarm(
     params: Record<string, string>,
@@ -131,19 +135,19 @@ export class OfflineAgent {
       return { text, action: 'alarm', param: params.time };
     } catch (err: any) {
       this.context.reset();
-      console.error('[Offline] Eroare setare alarmă:', err);
+      console.error('[Offline] Alarm setup error:', err);
       return { text: 'Sorry, I could not set the alarm. Please try again.' };
     }
   }
 
-  // ─── Continuare dialog ────────────────────────────────────────────────────
+  // ─── Continue dialog ────────────────────────────────────────────────────
 
   private async _continueDialog(transcript: string): Promise<OfflineResponse> {
     const pendingIntent = this.context.pendingIntent!;
     const nextParam = this.context.nextMissingParam!;
 
     console.log(
-      `[Offline] Dialog în curs: intent=${pendingIntent}, aștept=${nextParam}`,
+      `[Offline] Dialog in progress: intent=${pendingIntent}, waiting=${nextParam}`,
     );
 
     if (pendingIntent === 'alarm') {
@@ -184,7 +188,7 @@ export class OfflineAgent {
     return { text: question };
   }
 
-  // ─── Extragere parametru din răspuns liber ────────────────────────────────
+  // ─── Extract parameter from free-form answer ──────────────────────────────
 
   private _extractParam(paramName: string, text: string): string | null {
     switch (paramName) {
@@ -192,7 +196,7 @@ export class OfflineAgent {
         const fromWords = this.parser.parseTimeFromWords(text);
         if (fromWords) return fromWords;
 
-        // Fallback la regex pentru cifre (ex: "8:00 am", "14:30")
+        // Fallback to a digit regex (e.g. "8:00 am", "14:30")
         const match = text.match(
           /(?:at\s+)?(\d{1,2})(?::(\d{2}))?\s*(am|pm)?/i,
         );

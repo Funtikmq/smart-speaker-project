@@ -22,6 +22,7 @@ export class STTProcessor {
   // Callbacks setate de AgentController
   public _onTTSReceived: ((audio: Uint8Array) => void) | null = null;
   public _onResponseText: ((text: string) => void) | null = null;
+  public _onCommand: ((command: any) => void) | null = null;
 
   async initVosk(): Promise<void> {
     await this._ensureVoskReady();
@@ -51,6 +52,68 @@ export class STTProcessor {
     } else {
       return this._transcribeLocal(buffer);
     }
+  }
+
+  async queryCloud(text: string): Promise<STTResult> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(CLOUD_WS_URL);
+      (ws as any).binaryType = 'arraybuffer';
+
+      let responseText = '';
+
+      const timeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('Cloud request timeout (15s)'));
+      }, 15000);
+
+      ws.onopen = () => {
+        ws.send(
+          JSON.stringify({
+            type: 'text_query',
+            text,
+            play_tts_on_server: false,
+          }),
+        );
+      };
+
+      ws.onmessage = event => {
+        if (event.data instanceof ArrayBuffer) {
+          return;
+        }
+
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === 'response') {
+            responseText = msg.text || '';
+            this._onResponseText?.(responseText);
+          } else if (msg.type === 'command') {
+            this._onCommand?.(msg);
+          } else if (msg.type === 'done') {
+            clearTimeout(timeout);
+            ws.close();
+            resolve({
+              text: responseText,
+              confidence: 1.0,
+              source: 'cloud',
+            });
+          }
+        } catch (error) {
+          console.warn('[STT] Unparseable cloud response:', error);
+        }
+      };
+
+      ws.onerror = error => {
+        clearTimeout(timeout);
+        reject(new Error(`Cloud WebSocket error: ${JSON.stringify(error)}`));
+      };
+
+      ws.onclose = event => {
+        clearTimeout(timeout);
+        if (event.code !== 1000 && !responseText) {
+          reject(new Error(`Cloud WebSocket closed: ${event.code}`));
+        }
+      };
+    });
   }
 
   // ─── Online: WebSocket → Whisper cloud ───────────────────────────────────
@@ -113,6 +176,19 @@ export class STTProcessor {
           } else if (msg.type === 'response') {
             console.log(`[STT] Răspuns text: "${msg.text}"`);
             this._onResponseText?.(msg.text);
+          } else if (msg.type === 'command') {
+            console.log(`[STT] Comandă primită: ${JSON.stringify(msg)}`);
+            this._onCommand?.(msg);
+          } else if (msg.type === 'done') {
+            console.log(`[STT] Procesare terminată de server.`);
+            clearTimeout(timeout);
+            // Dacă am cerut play_tts_on_server: false, putem închide conexiunea și rezolva acum
+            ws.close();
+            resolve({
+              text: transcriptionText,
+              confidence: 1.0,
+              source: 'cloud',
+            });
           }
         } catch (e) {
           console.warn('[STT] Mesaj neparsabil:', e);

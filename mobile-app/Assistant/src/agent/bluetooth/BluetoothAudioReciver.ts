@@ -67,7 +67,9 @@ export class BluetoothAudioReceiver {
       const paired = await RNBluetoothClassic.getBondedDevices();
       const found = paired.find((d: any) => d.address === this.macAddress);
       if (!found) {
-        throw new Error(`Pi-ul (${this.macAddress}) nu e paired cu telefonul.`);
+        throw new Error(
+          `The Pi (${this.macAddress}) is not paired with the phone.`,
+        );
       }
 
       // charset 'latin1' (ISO-8859-1) — singurul charset Java care mapează
@@ -79,7 +81,7 @@ export class BluetoothAudioReceiver {
       this.subscription = this.device!.onDataReceived(this._onData.bind(this));
 
       this._setStatus('connected');
-      console.log('[BT] Conectat la Pi:', this.macAddress);
+      console.log('[BT] Connected to Pi:', this.macAddress);
     } catch (err) {
       this._setStatus('error');
       throw err;
@@ -93,7 +95,7 @@ export class BluetoothAudioReceiver {
     this.device = null;
     this._rawBuffer = new Uint8Array(0);
     this._setStatus('disconnected');
-    console.log('[BT] Deconectat.');
+    console.log('[BT] Disconnected.');
   }
 
   get status(): BtStatus {
@@ -107,7 +109,7 @@ export class BluetoothAudioReceiver {
    * 1 byte tip (MSG_COMMAND) + 2 bytes lungime + JSON bytes
    */
   async sendCommand(msg: object): Promise<void> {
-    if (!this.device) throw new Error('Nu ești conectat la Pi.');
+    if (!this.device) throw new Error('You are not connected to the Pi.');
 
     const jsonBytes = _utf8Encode(JSON.stringify(msg));
     const frame = new Uint8Array(HEADER_SIZE + jsonBytes.length);
@@ -133,8 +135,8 @@ export class BluetoothAudioReceiver {
     // DEBUG — log primul frame primit ca să verificăm protocolul
     if (this._rawBuffer.length === 0 && incoming.length > 0) {
       console.log(
-        `[BT] Primul frame: ${incoming.length} bytes, ` +
-          `tip=0x${incoming[0].toString(16)}, ` +
+        `[BT] First frame: ${incoming.length} bytes, ` +
+          `type=0x${incoming[0].toString(16)}, ` +
           `len=${(incoming[1] << 8) | incoming[2]}`,
       );
     }
@@ -158,7 +160,7 @@ export class BluetoothAudioReceiver {
       const payload = this._rawBuffer.slice(HEADER_SIZE, HEADER_SIZE + length);
       this._rawBuffer = this._rawBuffer.slice(HEADER_SIZE + length);
 
-      console.log(`[BT] Frame: tip=0x${msgType.toString(16)}, len=${length}`);
+      console.log(`[BT] Frame: type=0x${msgType.toString(16)}, len=${length}`);
       this._handleFrame(msgType, payload);
     }
   }
@@ -178,23 +180,23 @@ export class BluetoothAudioReceiver {
         console.log('[BT] Mesaj Pi:', msg);
 
         if (msg.type === 'check_internet') {
-          // Pi întreabă dacă telefonul are internet — răspundem imediat
+          // The Pi asks if the phone has internet - reply immediately.
           const netState = await NetInfo.fetch();
           const online =
             !!netState.isConnected && !!netState.isInternetReachable;
           const reply: NetStatusMsg = { type: 'net_status', online };
           await this.sendCommand(reply);
-          console.log('[BT] Răspuns net_status:', online);
+          console.log('[BT] net_status reply:', online);
         } else if (msg.type === 'recording_stopped') {
-          // Pi a terminat înregistrarea
+          // The Pi finished recording.
           this._setStatus('connected');
           this.onRecordingStopped?.(msg.use_cloud);
         }
       } catch (err) {
-        console.warn('[BT] JSON invalid:', err);
+        console.warn('[BT] Invalid JSON:', err);
       }
     } else {
-      console.warn('[BT] Tip mesaj necunoscut:', msgType);
+      console.warn('[BT] Unknown message type:', msgType);
     }
   }
 

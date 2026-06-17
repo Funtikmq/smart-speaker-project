@@ -18,12 +18,21 @@ PLAYER_QUEUE_SIZE   = 64
 PLAYBACK_DEVICE = "plug:default"   # Google Voice HAT output
 
 # ─── VAD (Voice Activity Detection) ──────────────────────────────────────────
-# Ajustează VAD_RMS_THRESHOLD în funcție de zgomotul de fond:
-#   - cameră liniștită: 200–400
-#   - cameră normală:   400–800
-VAD_RMS_THRESHOLD = 300      # sub acest RMS = silențiu
-VAD_SILENCE_FRAMES = 70       # ~3s la MIC_BLOCKSIZE=2048
-VAD_MIN_RECORD_SECONDS = 1.2 # ignoră stop-ul pe silențiu în primele 1.2 secunde
+# VAD Adaptiv: se calibrează automat pe baza zgomotului de fond
+#   - În primele VAD_CALIBRATION_FRAMES, calculează zgomotul de fond
+#   - Pragul dinamic = noise_floor * VAD_THRESHOLD_MULTIPLIER
+#   - Pentru zgomot mai mare: creștiți VAD_THRESHOLD_MULTIPLIER
+
+VAD_RMS_THRESHOLD = 300      # prag inițial (ajustare manuală)
+VAD_SILENCE_FRAMES = 70       # ~3s la MIC_BLOCKSIZE=2048 — cadre consecutive sub prag
+VAD_MIN_RECORD_SECONDS = 1.2  # ignoră stop-ul pe silențiu în primele 1.2 secunde
+VAD_MAX_RECORD_SECONDS = 20.0 # safety cap: oprește înregistrarea dacă VAD nu declanșează
+
+# ─── VAD Adaptiv (calibrare dinamică la zgomot) ──────────────────────────────
+VAD_ADAPTIVE_MODE = True       # activează detecția dinamică
+VAD_CALIBRATION_FRAMES = 10    # primele 10 frame-uri pentru estimare zgomot
+VAD_THRESHOLD_MULTIPLIER = 1.8 # prag = noise_floor * multiplicator (1.3-2.0 în zgomot)
+VAD_NOISE_GATE_DB = -40        # filtrează componente sub -40dB din spectru
 
 # ─── Fișiere ──────────────────────────────────────────────────────────────────
 REC_FILE = "recorded_audio.wav"
