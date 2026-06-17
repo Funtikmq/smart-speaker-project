@@ -22,6 +22,7 @@ export class STTProcessor {
   // Callbacks setate de AgentController
   public _onTTSReceived: ((audio: Uint8Array) => void) | null = null;
   public _onResponseText: ((text: string) => void) | null = null;
+  public _onCommand: ((command: any) => void) | null = null;
 
   async initVosk(): Promise<void> {
     await this._ensureVoskReady();
@@ -113,6 +114,19 @@ export class STTProcessor {
           } else if (msg.type === 'response') {
             console.log(`[STT] Răspuns text: "${msg.text}"`);
             this._onResponseText?.(msg.text);
+          } else if (msg.type === 'command') {
+            console.log(`[STT] Comandă primită: ${JSON.stringify(msg)}`);
+            this._onCommand?.(msg);
+          } else if (msg.type === 'done') {
+            console.log(`[STT] Procesare terminată de server.`);
+            clearTimeout(timeout);
+            // Dacă am cerut play_tts_on_server: false, putem închide conexiunea și rezolva acum
+            ws.close();
+            resolve({
+              text: transcriptionText,
+              confidence: 1.0,
+              source: 'cloud',
+            });
           }
         } catch (e) {
           console.warn('[STT] Mesaj neparsabil:', e);

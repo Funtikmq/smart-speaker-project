@@ -138,19 +138,61 @@ class Assistant:
             await client.send_command({"type": "recording_stopped"})
             self.indicator.processing()
 
-            data = await client.recv_json(timeout=30)
-            if data.get("type") == "transcription":
-                logger.info(f"Transcriere: {data['text']}")
+            audio_to_play = None
+            command_received = None
 
-            data = await client.recv_json(timeout=30)
-            if data.get("type") == "response":
-                logger.info(f"Răspuns: {data['text']}")
+            while True:
+                try:
+                    # Folosim inner recv direct pentru a prinde și string și bytes fără a forța tipul înainte
+                    message = await asyncio.wait_for(client._ws.recv(), timeout=15)
+                    if isinstance(message, bytes):
+                        audio_to_play = message
+                        break # considerăm că bytes (TTS) este ultimul mesaj primit din frame
+                    elif isinstance(message, str):
+                        import json
+                        data = json.loads(message)
+                        msg_type = data.get("type")
+                        if msg_type == "transcription":
+                            logger.info(f"Transcriere: {data.get('text')}")
+                        elif msg_type == "response":
+                            logger.info(f"Răspuns: {data.get('text')}")
+                        elif msg_type == "command":
+                            logger.info(f"Comandă primită: {data}")
+                            command_received = data
+                except asyncio.TimeoutError:
+                    logger.warning("Timeout așteptând răspuns de la cloud direct")
+                    break
 
-            audio_bytes = await client.recv_bytes(timeout=30)
-            await self._play_response(audio_bytes)
+            if audio_to_play:
+                await self._play_response(audio_to_play)
+            
+            if command_received and command_received.get("command") == "play_youtube":
+                await self._execute_play_youtube(command_received.get("payload", {}))
 
         finally:
             await client.disconnect()
+
+    async def _execute_play_youtube(self, payload: dict):
+        url = payload.get("url")
+        if not url:
+            return
+        logger.info(f"Redare YouTube stream: {url}")
+        
+        import os
+        import subprocess
+        import webbrowser
+        
+        # Dacă dezvoltăm/testăm local pe PC cu Windows (stand-alone mode debug)
+        if os.name == 'nt':
+            logger.info("Deoarece ești pe Windows, deschid piesa direct în browser...")
+            webbrowser.open(url)
+            return
+
+        # Lansăm mpv (audio only) în background pentru Raspberry Pi (Linux)
+        try:
+            subprocess.Popen(["mpv", "--no-video", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        except Exception as e:
+            logger.error(f"Eroare lansare mpv: {e}. Asigură-te că mpv și yt-dlp sunt instalate.")
 
     # ─── Bluetooth (cu sau fără cloud) ────────────────────────────────────────
 
@@ -173,20 +215,32 @@ class Assistant:
             except asyncio.TimeoutError:
                 logger.warning("Nu a venit TTS prin RFCOMM — nu mai așteptăm")
                 # Dacă telefonul trimite în schimb un command JSON cu textul răspunsului,
-                # putem genera TTS local ca fallback.
+                # putem genera TTS local ca fallback, sau prelua o comanda.
                 try:
-                    cmd = await asyncio.wait_for(self.bt_server.recv_command(), timeout=0.5)
-                    text = cmd.get("text") or cmd.get("response") or None
-                    if text and cloud_synthesize:
-                        try:
-                            audio_bytes = cloud_synthesize(text)
-                            await self._play_response(audio_bytes)
-                        except Exception as e:
-                            logger.warning(f"Local TTS eșuat: {e}")
-                    else:
-                        logger.info("Niciun text de răspuns primit de la telefon; sar peste redare.")
+                    cmd_loop_timeout = 2.0
+                    while True:
+                        cmd = await asyncio.wait_for(self.bt_server.recv_command(), timeout=cmd_loop_timeout)
+                        if cmd.get("type") == "command" and cmd.get("command") == "play_youtube":
+                            await self._execute_play_youtube(cmd.get("payload", {}))
+                            break
+                        
+                        text = cmd.get("text") or cmd.get("response") or None
+                        if text and cloud_synthesize:
+                            try:
+                                audio_bytes = cloud_synthesize(text)
+                                await self._play_response(audio_bytes)
+                                break
+                            except Exception as e:
+                                logger.warning(f"Local TTS eșuat: {e}")
+                                break
+                        elif text:
+                            logger.info(f"Niciun text de răspuns primit de la telefon; sar peste redare.")
+                            break
+                        
+                        if cmd.get("type") == "tts_done":
+                            break
                 except asyncio.TimeoutError:
-                    logger.info("Nicio comandă de la telefon; sar peste redare.")
+                    logger.info("Nicio comandă de la telefon în timp util.")
 
         except asyncio.TimeoutError:
             logger.warning("Timeout așteptând TTS de la telefon")

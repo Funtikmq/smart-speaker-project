@@ -20,6 +20,7 @@
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
+import { Linking } from 'react-native';
 import {
   BluetoothAudioReceiver,
   BtStatus,
@@ -98,6 +99,28 @@ export class AgentController {
       } catch (err) {
         console.warn('[Agent] Eroare la redare TTS nativ:', err);
       }
+    };
+
+    this.stt._onCommand = async (commandMsg: any) => {
+      console.log(
+        `[Agent] Comanda primita de la server: ${JSON.stringify(commandMsg)}`,
+      );
+      if (commandMsg.command === 'play_youtube' && commandMsg.payload?.url) {
+        // Redăm direct pe telefon (va ajunge pe boxă prin A2DP / Bluetooth)
+        console.log(`[Agent] Deschidem pe telefon: ${commandMsg.payload.url}`);
+        Linking.openURL(commandMsg.payload.url).catch(err =>
+          console.error('[Agent] Eroare Linking.openURL:', err),
+        );
+      } else {
+        console.log(`[Agent] Redirecționăm comanda spre Pi...`);
+        await this.bt.sendCommand(commandMsg);
+      }
+    };
+
+    // Dacă serverul trimite audio (ceea ce nu ar trebui, fiindcă cerem play_tts_on_server: false),
+    // îl ignorăm sau îl logăm.
+    this.stt._onTTSReceived = audioBytes => {
+      console.log('[Agent] Primit audio bytes nesperați de la server.');
     };
 
     // Când serverul trimite audio TTS raw — ignorăm (vom reda textul nativ)
