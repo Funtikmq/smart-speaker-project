@@ -26,6 +26,7 @@ PLAYBACK_DEVICE = "plug:default"   # Google Voice HAT output
 VAD_RMS_THRESHOLD = 300      # prag inițial (ajustare manuală)
 VAD_SILENCE_FRAMES = 70       # ~3s la MIC_BLOCKSIZE=2048 — cadre consecutive sub prag
 VAD_MIN_RECORD_SECONDS = 1.2  # ignoră stop-ul pe silențiu în primele 1.2 secunde
+VAD_MAX_RECORD_SECONDS = 20.0 # safety cap: oprește înregistrarea dacă VAD nu declanșează
 
 # ─── VAD Adaptiv (calibrare dinamică la zgomot) ──────────────────────────────
 VAD_ADAPTIVE_MODE = True       # activează detecția dinamică

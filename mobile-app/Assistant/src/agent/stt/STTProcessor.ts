@@ -54,6 +54,68 @@ export class STTProcessor {
     }
   }
 
+  async queryCloud(text: string): Promise<STTResult> {
+    return new Promise((resolve, reject) => {
+      const ws = new WebSocket(CLOUD_WS_URL);
+      (ws as any).binaryType = 'arraybuffer';
+
+      let responseText = '';
+
+      const timeout = setTimeout(() => {
+        ws.close();
+        reject(new Error('Cloud request timeout (15s)'));
+      }, 15000);
+
+      ws.onopen = () => {
+        ws.send(
+          JSON.stringify({
+            type: 'text_query',
+            text,
+            play_tts_on_server: false,
+          }),
+        );
+      };
+
+      ws.onmessage = event => {
+        if (event.data instanceof ArrayBuffer) {
+          return;
+        }
+
+        try {
+          const msg = JSON.parse(event.data as string);
+          if (msg.type === 'response') {
+            responseText = msg.text || '';
+            this._onResponseText?.(responseText);
+          } else if (msg.type === 'command') {
+            this._onCommand?.(msg);
+          } else if (msg.type === 'done') {
+            clearTimeout(timeout);
+            ws.close();
+            resolve({
+              text: responseText,
+              confidence: 1.0,
+              source: 'cloud',
+            });
+          }
+        } catch (error) {
+          console.warn('[STT] Unparseable cloud response:', error);
+        }
+      };
+
+      ws.onerror = error => {
+        clearTimeout(timeout);
+        reject(new Error(`Cloud WebSocket error: ${JSON.stringify(error)}`));
+      };
+
+      ws.onclose = event => {
+        clearTimeout(timeout);
+        if (event.code !== 1000 && !responseText) {
+          reject(new Error(`Cloud WebSocket closed: ${event.code}`));
+        }
+      };
+    });
+  }
+
   // ─── Online: WebSocket → Whisper cloud ───────────────────────────────────
 
   private _transcribeCloud(

@@ -258,8 +258,19 @@ class Assistant:
 
         chunks_sent = 0
         send_is_async = asyncio.iscoroutinefunction(send_fn)
+        max_record_seconds = getattr(config, "VAD_MAX_RECORD_SECONDS", 20.0)
+        started_at = asyncio.get_running_loop().time()
 
         while not self._recording_done.is_set():
+            elapsed = asyncio.get_running_loop().time() - started_at
+            if elapsed >= max_record_seconds:
+                logger.warning(
+                    "Recording safety timeout reached after %.1fs; stopping capture.",
+                    elapsed,
+                )
+                self._recording_done.set()
+                break
+
             chunk = self.recorder.get_chunk(timeout=0.1)
             if chunk:
                 if send_is_async:
@@ -272,6 +283,7 @@ class Assistant:
         logger.info(f"Înregistrare terminată — {chunks_sent} chunks trimiși")
 
     def _on_silence(self):
+        logger.info("VAD silence detected; stopping recording.")
         self._recording_done.set()
 
     # ─── Redare răspuns ───────────────────────────────────────────────────────

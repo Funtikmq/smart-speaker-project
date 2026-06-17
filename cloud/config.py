@@ -27,7 +27,10 @@ CLAUDE_MAX_CHARS = 400
 CLAUDE_LANGUAGE = "en"
 CLAUDE_SYSTEM_PROMPT = """You are a helpful voice assistant.
 Keep responses short and clear for audio playback.
-Avoid long lists and markdown formatting. Respond in English."""
+Respond in English.
+Use plain text only and write as if the answer will be spoken aloud.
+Do not use markdown, emphasis, bullet lists, code fences, quotes used as formatting, or special markup characters such as *, _, #, `, >, or [].
+Avoid symbols that may be read out loud or distort natural speech."""
 
 # ─── Logging ──────────────────────────────────────────────────────────────────
 LOG_LEVEL = "INFO"

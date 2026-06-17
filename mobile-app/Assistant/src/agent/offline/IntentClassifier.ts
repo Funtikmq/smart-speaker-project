@@ -84,6 +84,7 @@ const INTENTS: IntentDefinition[] = [
   {
     name: 'alarm',
     keywords: [
+      { word: 'set', weight: 2 },
       { word: 'alarm', weight: 3 },
       { word: 'set alarm', weight: 4 },
       { word: 'set an alarm', weight: 4 },
@@ -129,6 +130,49 @@ export class IntentClassifier {
       score: bestScore,
       params: bestIntent.extractParams(t),
     };
+  }
+
+  isLikelyFollowUp(transcript: string): boolean {
+    const t = transcript.toLowerCase().trim();
+    if (!t) return false;
+
+    if (this._looksLikeTimeValue(t)) return true;
+    if (this._looksLikeDateValue(t)) return true;
+
+    return false;
+  }
+
+  private _looksLikeTimeValue(text: string): boolean {
+    if (
+      /(?:^|\s)(?:for|at|around)?\s*\d{1,2}(?::\d{2})?\s*(?:am|pm)?\b/.test(
+        text,
+      )
+    ) {
+      return true;
+    }
+
+    if (
+      /\b(?:one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve)\b/.test(
+        text,
+      ) &&
+      /\b(?:am|pm|o'clock|oclock)\b/.test(text)
+    ) {
+      return true;
+    }
+
+    return false;
+  }
+
+  private _looksLikeDateValue(text: string): boolean {
+    if (
+      /(?:today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday)/.test(
+        text,
+      )
+    ) {
+      return true;
+    }
+
+    return false;
   }
 
   getRequiredParams(intent: IntentName): string[] {
