@@ -33,10 +33,17 @@ export class STTProcessor {
       this._vosk = new VoskSTT();
     }
 
-    // Dacă nu avem inițializare în curs sau Vosk a fost distrus între timp,
-    // relansăm init pentru a permite sesiuni multiple connect/disconnect.
-    if (!this._voskReady || !this._vosk.isReady) {
-      this._voskReady = this._vosk.init();
+    // Keep Vosk initialization single-flight so one recording cannot start two
+    // local transcriptions while the model is still loading.
+    if (this._vosk.isReady) {
+      return;
+    }
+
+    if (!this._voskReady) {
+      this._voskReady = this._vosk.init().catch(error => {
+        this._voskReady = null;
+        throw error;
+      });
     }
 
     await this._voskReady;

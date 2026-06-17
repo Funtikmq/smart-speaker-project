@@ -1,3 +1,5 @@
+import { CalendarDateParser } from './CalendarDateParser';
+
 export type SpokenDayReference =
   | 'today'
   | 'tomorrow'
@@ -11,7 +13,7 @@ export type SpokenDayReference =
 
 export interface ParsedAlarmInput {
   time: string | null;
-  day: SpokenDayReference | null;
+  day: string | null;
 }
 
 type ParsedTimeParts = {
@@ -141,6 +143,8 @@ function parseNumericPhrase(tokens: string[]): number | null {
 }
 
 export class SpeechDateTimeParser {
+  private calendarDateParser = new CalendarDateParser();
+
   parseAlarmInput(text: string): ParsedAlarmInput {
     return {
       time: this.parseTimeFromWords(text),
@@ -167,7 +171,7 @@ export class SpeechDateTimeParser {
     return `${hours}:${minutesStr} ${periodUpper}`;
   }
 
-  extractDayReference(text: string): SpokenDayReference | null {
+  extractDayReference(text: string): string | null {
     const t = text.toLowerCase().trim();
 
     if (t.includes('today')) return 'today';
@@ -183,12 +187,19 @@ export class SpeechDateTimeParser {
       'sunday',
     ];
 
-    return weekdays.find(day => t.includes(day)) ?? null;
+    return (
+      weekdays.find(day => t.includes(day)) ??
+      this.calendarDateParser.parse(text)?.value ??
+      null
+    );
   }
 
   resolveDate(day?: string): Date {
     const now = new Date();
     if (!day || day === 'today') return new Date(now);
+
+    const calendarDate = this.calendarDateParser.resolve(day, now);
+    if (calendarDate) return calendarDate;
 
     if (day === 'tomorrow') {
       const tomorrow = new Date(now);
@@ -241,6 +252,14 @@ export class SpeechDateTimeParser {
     }
 
     if (day === 'tomorrow') return ' tomorrow';
+
+    if (this.calendarDateParser.isCalendarDateValue(day)) {
+      return ` on ${date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        month: 'long',
+        day: 'numeric',
+      })}`;
+    }
 
     const days = [
       'Sunday',
