@@ -24,10 +24,17 @@ async def main():
 
     def _shutdown():
         logger.info("Semnal oprire primit.")
-        stop_event.set()
+        try:
+            assistant.indicator.all_off()
+        except Exception as e:
+            logger.warning("Nu am putut stinge LED-urile imediat: %s", e)
+        loop.call_soon_threadsafe(stop_event.set)
 
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _shutdown)
+        try:
+            loop.add_signal_handler(sig, _shutdown)
+        except NotImplementedError:
+            signal.signal(sig, lambda *_: _shutdown())
 
     try:
         await stop_event.wait()
@@ -37,4 +44,7 @@ async def main():
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        logger.info("Oprire fortata din tastatura.")

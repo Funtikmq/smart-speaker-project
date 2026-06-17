@@ -44,14 +44,16 @@ class Assistant:
         # Wake word
         self.detector = WakeWordDetector(on_detected=self._on_wake_word)
 
+        # UI
+        self.indicator = Indicator(sounds_dir=config.SOUNDS_DIR)
+
         # Rețea
-        self.bt_server = BluetoothServer()
+        self.bt_server = BluetoothServer(
+            on_connection_changed=self._on_bluetooth_connection_changed
+        )
         self.router    = Router()
         # ── Injectăm bt_server în router pentru _check_bluetooth și check_internet
         self.router.set_bt_server(self.bt_server)
-
-        # UI
-        self.indicator = Indicator(sounds_dir=config.SOUNDS_DIR)
 
         # Stare internă
         self._loop: asyncio.AbstractEventLoop | None = None
@@ -77,13 +79,29 @@ class Assistant:
         logger.info("Assistant pornit — ascult wake word...")
 
     def stop(self):
-        self.detector.stop()
-        self.mic.stop()
-        self.recorder.stop()
-        self.player.stop()
-        if config.USE_BLUETOOTH:
-            self.bt_server.stop()
+        try:
+            for name, stop_fn in (
+                ("wake word detector", self.detector.stop),
+                ("microfon", self.mic.stop),
+                ("recorder", self.recorder.stop),
+                ("player", self.player.stop),
+            ):
+                try:
+                    stop_fn()
+                except Exception as e:
+                    logger.warning("Eroare la oprire %s: %s", name, e)
+
+            if config.USE_BLUETOOTH:
+                try:
+                    self.bt_server.stop()
+                except Exception as e:
+                    logger.warning("Eroare la oprire Bluetooth: %s", e)
+        finally:
+            self.indicator.shutdown()
         logger.info("Assistant oprit.")
+
+    def _on_bluetooth_connection_changed(self, connected: bool):
+        self.indicator.bluetooth_connected(connected)
 
     # ─── Wake word callback ───────────────────────────────────────────────────
 
@@ -123,6 +141,7 @@ class Assistant:
 
         finally:
             self.recorder.stop()
+            self.indicator.recording_stopped()
             self.recorder.drain_queue()
             self.detector.running = True
             logger.info("Revenit la ascultare wake word...")
@@ -254,6 +273,7 @@ class Assistant:
     async def _record_and_send(self, send_fn):
         self._recording_done.clear()
         self.recorder.on_silence = self._on_silence
+        self.indicator.recording_started()
         self.recorder.start()
 
         chunks_sent = 0
@@ -280,6 +300,7 @@ class Assistant:
                 chunks_sent += 1
 
         self.recorder.stop()
+        self.indicator.recording_stopped()
         logger.info(f"Înregistrare terminată — {chunks_sent} chunks trimiși")
 
     def _on_silence(self):
