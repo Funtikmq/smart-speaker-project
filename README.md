@@ -59,8 +59,6 @@ adb logcat *:S ReactNativeJS:V
 - English only (`en-US`)
 - Pi MAC address is hardcoded in the app
 
-## Authors
-| Name | Role |
-|------|------|
-| Bobeica Veaceslav | Embedded System, Mobile Application Business Logic, Cloud |
-| Uglea Nicolae | Mobile Application UI/UX |
+## Author
+Bobeica Veaceslav
+
