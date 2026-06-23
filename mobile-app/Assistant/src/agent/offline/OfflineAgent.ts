@@ -24,6 +24,8 @@ import {
   TimeService,
   DateService,
   AlarmService,
+  CalendarService,
+  CalendarDateParser,
   SpeechDateTimeParser,
 } from '../../services';
 
@@ -36,6 +38,7 @@ export interface OfflineResponse {
 const PARAM_QUESTIONS: Record<string, string> = {
   time: 'For what time?',
   day: 'For which day?',
+  title: 'What is the event title?',
 };
 
 export class OfflineAgent {
@@ -45,6 +48,8 @@ export class OfflineAgent {
   private timeService = new TimeService();
   private dateService = new DateService();
   private alarmService = new AlarmService();
+  private calendarService = new CalendarService();
+  private calendarDateParser = new CalendarDateParser();
 
   hasPendingContext(): boolean {
     return this.context.hasPendingIntent;
@@ -71,6 +76,8 @@ export class OfflineAgent {
       if (parsed.day) {
         params.day = parsed.day;
       }
+    } else if (result.intent === 'event') {
+      Object.assign(params, this._extractEventParams(t));
     }
 
     return this._handleIntent(result.intent, params);
@@ -98,9 +105,12 @@ export class OfflineAgent {
       case 'alarm':
         return this._handleAlarm(params);
 
+      case 'event':
+        return this._handleEvent(params);
+
       default:
         return {
-          text: "Sorry, I didn't understand that. You can ask me for the time, date, or to set an alarm.",
+          text: "Sorry, I didn't understand that. You can ask me for the time, date, to set an alarm, or to add a calendar event.",
         };
     }
   }
@@ -140,6 +150,44 @@ export class OfflineAgent {
     }
   }
 
+  // Event
+
+  private async _handleEvent(
+    params: Record<string, string>,
+  ): Promise<OfflineResponse> {
+    const required = this.classifier.getRequiredParams('event');
+    const missing = required.filter((paramName: string) => !params[paramName]);
+
+    if (missing.length > 0) {
+      this.context.start('event', params, missing);
+      const question =
+        PARAM_QUESTIONS[missing[0]] ?? 'Can you give me more details?';
+      return { text: question };
+    }
+
+    return this._executeEvent(params);
+  }
+
+  private async _executeEvent(
+    params: Record<string, string>,
+  ): Promise<OfflineResponse> {
+    try {
+      const text = await this.calendarService.setEvent({
+        title: params.title,
+        day: params.day,
+        time: params.time,
+      });
+      this.context.reset();
+      return { text, action: 'event', param: params.title };
+    } catch (err: any) {
+      this.context.reset();
+      console.error('[Offline] Calendar event setup error:', err);
+      return {
+        text: 'Sorry, I could not save the calendar event. Please try again.',
+      };
+    }
+  }
+
   // ─── Continue dialog ────────────────────────────────────────────────────
 
   private async _continueDialog(transcript: string): Promise<OfflineResponse> {
@@ -165,6 +213,32 @@ export class OfflineAgent {
         const question = PARAM_QUESTIONS[nextParam] ?? 'Could you repeat that?';
         return { text: `I didn't catch that. ${question}` };
       }
+    } else if (pendingIntent === 'event') {
+      const extracted = this._extractEventParams(transcript);
+
+      if (extracted.title) {
+        this.context.addParam('title', extracted.title);
+      }
+
+      if (extracted.day) {
+        this.context.addParam('day', extracted.day);
+      }
+
+      if (extracted.time) {
+        this.context.addParam('time', extracted.time);
+      }
+
+      if (!this.context.collectedParams[nextParam]) {
+        const fallback = this._extractParam(nextParam, transcript);
+        if (fallback) {
+          this.context.addParam(nextParam, fallback);
+        }
+      }
+
+      if (!this.context.collectedParams[nextParam]) {
+        const question = PARAM_QUESTIONS[nextParam] ?? 'Could you repeat that?';
+        return { text: `I didn't catch that. ${question}` };
+      }
     } else {
       const extracted = this._extractParam(nextParam, transcript);
 
@@ -179,6 +253,9 @@ export class OfflineAgent {
     if (this.context.isComplete()) {
       if (pendingIntent === 'alarm') {
         return this._executeAlarm(this.context.collectedParams);
+      }
+      if (pendingIntent === 'event') {
+        return this._executeEvent(this.context.collectedParams);
       }
     }
 
@@ -209,9 +286,86 @@ export class OfflineAgent {
       case 'day': {
         return this.parser.extractDayReference(text);
       }
+      case 'title': {
+        return this._extractEventTitle(text);
+      }
       default:
         return null;
     }
+  }
+
+  private _extractEventParams(text: string): Record<string, string> {
+    const params: Record<string, string> = {};
+    const calendarDate = this.calendarDateParser.parse(text);
+    const textWithoutCalendarDate = calendarDate
+      ? this._removeTextSpan(text, calendarDate.matchedText)
+      : text;
+    const day = calendarDate?.value ?? this.parser.extractDayReference(text);
+    const time = this.parser.parseTimeFromWords(textWithoutCalendarDate);
+
+    if (time) {
+      params.time = time;
+    }
+
+    if (day) {
+      params.day = day;
+    }
+
+    const title = this._extractEventTitle(textWithoutCalendarDate);
+    if (title) {
+      params.title = title;
+    }
+
+    return params;
+  }
+
+  private _extractEventTitle(text: string): string | null {
+    const normalized = text
+      .toLowerCase()
+      .replace(/[.,!?;:]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    const explicit = normalized.match(
+      /\b(?:called|named|titled|title)\s+(.+?)(?:\s+(?:today|tomorrow|on|at)\b|$)/,
+    );
+    if (explicit?.[1]) {
+      return this._cleanEventTitle(explicit[1]);
+    }
+
+    const afterCommand = normalized.replace(
+      /^(?:please\s+)?(?:set|said|sent|add|create|schedule)\s+(?:(?:a|an|am|in)\s+)?(?:calendar\s+)?(?:event)?\s*/i,
+      '',
+    );
+    const withoutDateTime = afterCommand
+      .replace(
+        /\b(?:today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\b.*$/i,
+        '',
+      )
+      .replace(/\b(?:for|on)\s*$/i, '')
+      .replace(/\b(?:on|at)\s+.*$/i, '')
+      .trim();
+
+    return this._cleanEventTitle(withoutDateTime);
+  }
+
+  private _removeTextSpan(text: string, span: string): string {
+    const escaped = span.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return text.replace(new RegExp(escaped, 'i'), ' ');
+  }
+
+  private _cleanEventTitle(title: string): string | null {
+    const cleaned = title
+      .replace(
+        /^(?:please\s+)?(?:(?:set|said|sent|add|create|schedule)\s+)?(?:(?:a|an|am|in)\s+)?(?:calendar\s+)?(?:event\s+)?(?:for|about)?\s*/i,
+        '',
+      )
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    if (!cleaned || cleaned.length < 2) return null;
+
+    return cleaned.replace(/\b\w/g, char => char.toUpperCase());
   }
 
   resetContext(): void {

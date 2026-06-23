@@ -20,7 +20,7 @@ class BluetoothServer:
     Protocol: 1 byte tip + 2 bytes lungime big-endian + N bytes date
     """
 
-    def __init__(self):
+    def __init__(self, on_connection_changed=None):
         self._server_sock    = None
         self._client_sock    = None
         self._thread         = None
@@ -29,6 +29,7 @@ class BluetoothServer:
         self._command_queue  = None
         self._loop           = None
         self._connected      = threading.Event()
+        self._on_connection_changed = on_connection_changed
 
     # ─── Start / Stop ─────────────────────────────────────────────────────────
 
@@ -46,6 +47,7 @@ class BluetoothServer:
     def stop(self):
         self._running = False
         self._connected.clear()
+        self._notify_connection_changed(False)
         if self._client_sock:
             try:
                 self._client_sock.shutdown(socket.SHUT_RDWR)
@@ -61,6 +63,14 @@ class BluetoothServer:
                 pass
             self._server_sock = None
         logger.info("Bluetooth server oprit.")
+
+    def _notify_connection_changed(self, connected: bool):
+        if not self._on_connection_changed:
+            return
+        try:
+            self._on_connection_changed(connected)
+        except Exception as e:
+            logger.warning(f"Eroare callback Bluetooth indicator: {e}")
 
     # ─── Accept loop ──────────────────────────────────────────────────────────
 
@@ -78,6 +88,7 @@ class BluetoothServer:
                 self._client_sock, addr = self._server_sock.accept()
                 logger.info(f"Telefon conectat: {addr}")
                 self._connected.set()
+                self._notify_connection_changed(True)
                 self._send_status({"type": "connected"})
                 self._recv_loop()
             except Exception as e:
@@ -85,6 +96,7 @@ class BluetoothServer:
                     logger.error(f"BT accept error: {e}")
             finally:
                 self._connected.clear()
+                self._notify_connection_changed(False)
                 self._client_sock = None
                 logger.info("Telefon deconectat.")
 

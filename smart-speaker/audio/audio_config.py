@@ -23,8 +23,8 @@ PLAYBACK_DEVICE = "plug:default"   # Google Voice HAT output
 #   - Pragul dinamic = noise_floor * VAD_THRESHOLD_MULTIPLIER
 #   - Pentru zgomot mai mare: creștiți VAD_THRESHOLD_MULTIPLIER
 
-VAD_RMS_THRESHOLD = 300      # prag inițial (ajustare manuală)
-VAD_SILENCE_FRAMES = 70       # ~3s la MIC_BLOCKSIZE=2048 — cadre consecutive sub prag
+VAD_RMS_THRESHOLD = 300      # prag inițial 
+VAD_SILENCE_FRAMES = 35       # ~3s la MIC_BLOCKSIZE=2048 — cadre consecutive sub prag
 VAD_MIN_RECORD_SECONDS = 1.2  # ignoră stop-ul pe silențiu în primele 1.2 secunde
 VAD_MAX_RECORD_SECONDS = 20.0 # safety cap: oprește înregistrarea dacă VAD nu declanșează
 

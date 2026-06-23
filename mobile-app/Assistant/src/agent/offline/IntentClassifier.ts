@@ -6,7 +6,13 @@
  * Câștigă intenția cu scorul maxim (dacă depășește pragul minim).
  */
 
-export type IntentName = 'time' | 'date' | 'weekday' | 'alarm' | 'unknown';
+export type IntentName =
+  | 'time'
+  | 'date'
+  | 'weekday'
+  | 'alarm'
+  | 'event'
+  | 'unknown';
 
 export interface IntentResult {
   intent: IntentName;
@@ -95,6 +101,25 @@ const INTENTS: IntentDefinition[] = [
       { word: 'alarm for', weight: 3 },
     ],
     requiredParams: ['time'],
+    extractParams: () => ({}),
+  },
+  {
+    name: 'event',
+    keywords: [
+      { word: 'event', weight: 3 },
+      { word: 'calendar', weight: 3 },
+      { word: 'set event', weight: 4 },
+      { word: 'set an event', weight: 5 },
+      { word: 'sent an event', weight: 4 },
+      { word: 'said am event', weight: 4 },
+      { word: 'add event', weight: 4 },
+      { word: 'create event', weight: 4 },
+      { word: 'schedule event', weight: 4 },
+      { word: 'calendar event', weight: 4 },
+      { word: 'appointment', weight: 3 },
+      { word: 'meeting', weight: 2 },
+    ],
+    requiredParams: ['title', 'day'],
     extractParams: () => ({}),
   },
 ];

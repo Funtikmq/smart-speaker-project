@@ -111,6 +111,6 @@ class WakeWordDetector:
 
             result = self.porcupine.process(frame)
             if result >= 0:
-                logger.info("🎤 Wake word detectat!")
+                logger.info("Wake word detectat!")
                 if self.on_detected:
                     self.on_detected()

@@ -1,5 +1,5 @@
 import { NativeModules } from 'react-native';
-import RNFS from 'react-native-fs';
+import * as RNFS from 'react-native-fs';
 import { AudioBuffer } from '../bluetooth/AudioBuffer';
 
 const { VoskFile } = NativeModules as { VoskFile: any };

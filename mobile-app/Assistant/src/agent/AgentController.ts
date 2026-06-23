@@ -74,6 +74,7 @@ export class AgentController {
   private audioBuffer = new AudioBuffer();
   private _chunksReceived = 0;
   private _state: AgentState = INITIAL_STATE;
+  private _isProcessingRecording = false;
 
   // Multiple listeners so each screen can subscribe without clobbering the others.
   private _stateListeners = new Set<(s: Partial<AgentState>) => void>();
@@ -201,6 +202,13 @@ export class AgentController {
   }
 
   private async _onRecordingStopped(useCloud: boolean): Promise<void> {
+    if (this._isProcessingRecording) {
+      console.warn('[Agent] Ignoring duplicate recording_stopped while busy.');
+      return;
+    }
+
+    this._isProcessingRecording = true;
+
     console.log(
       `[Agent] Recording stopped. useCloud=${useCloud}, duration=${this.audioBuffer.durationSeconds.toFixed(
         1,
@@ -241,6 +249,7 @@ export class AgentController {
         error: err.message || 'Processing failed.',
       });
     } finally {
+      this._isProcessingRecording = false;
       setTimeout(() => this._emit({ phase: 'idle', partialText: '' }), 3000);
     }
   }
